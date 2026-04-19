@@ -14,36 +14,14 @@ import {
 import BottomNav from '@/components/ui/BottomNav'
 import HabitCard from '@/components/ui/HabitCard'
 import NutrientBar from '@/components/ui/NutrientBar'
+import { GlobalActionMenu, HabitCreationModal, FoodLogModal, ActivityLogModal } from '@/components/ui/ActionModals'
+import { ProgressAnalytics } from '@/components/ui/ProgressAnalytics'
+import { AICoach } from '@/components/ui/AICoach'
+import { useAuraStore } from '@/lib/store'
+import { getDashboardData } from '@/app/actions'
 
-// ─── Static Data ───
-const HABITS = [
-  { id: 1, name: 'Drink 3L Water', icon: Droplets, streak: 18, color: '#00f3ff' },
-  { id: 2, name: 'Workout 45min', icon: Dumbbell, streak: 12, color: '#bf00ff' },
-  { id: 3, name: 'Read 30 Pages', icon: BookOpen, streak: 7, color: '#22c55e' },
-  { id: 4, name: 'Meditate', icon: Moon, streak: 24, color: '#f97316' },
-]
-const WEEKLY_DOTS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-const WEEKLY_DONE = [true, true, true, true, false, false, false]
-
-const CHART_DATA = [
-  { day: 'Mon', cal: 1820, sugar: 12, added: 4 },
-  { day: 'Tue', cal: 2100, sugar: 8, added: 2 },
-  { day: 'Wed', cal: 1950, sugar: 15, added: 6 },
-  { day: 'Thu', cal: 1780, sugar: 10, added: 3 },
-  { day: 'Fri', cal: 2200, sugar: 9, added: 2 },
-  { day: 'Sat', cal: 2400, sugar: 18, added: 8 },
-  { day: 'Sun', cal: 1850, sugar: 11, added: 3 },
-]
-
-const FOOD_LOG = [
-  { meal: 'Breakfast', desc: 'Scrambled Eggs & Avocado Toast', kcal: 420, natSugar: 8, addSugar: 2, protein: 24, carbs: 38, fat: 22 },
-  { meal: 'Lunch', desc: 'Grilled Chicken Salad', kcal: 550, natSugar: 6, addSugar: 1, protein: 42, carbs: 28, fat: 18 },
-]
-
-const ACTIVITIES = [
-  { name: 'Running', dur: '30 min', kcal: 320, icon: Activity, color: '#00f3ff' },
-  { name: 'Yoga', dur: '45 min', kcal: 200, icon: Sparkles, color: '#bf00ff' },
-]
+const WEEKLY_DOTS = ['m', 't', 'w', 't', 'f', 's', 's']
+const WEEKLY_DONE = [true, true, false, true, true, false, false]
 
 // ─── Animated Counter ───
 function Counter({ target, suffix = '' }) {
@@ -90,11 +68,16 @@ function CardHeader({ icon: Icon, title, action }) {
 }
 
 // ─── TABS ───
-function HomeTab() {
+function HomeTab({ onAddHabit }) {
+  const { user, habits, foodLogs, activityLogs, dailyScore, isLoading } = useAuraStore()
   const [expandedFood, setExpandedFood] = useState(null)
   const [chartTab, setChartTab] = useState('calories')
 
-  const scoreData = [{ value: 85, fill: 'url(#scoreGrad)' }]
+  if (isLoading) {
+    return <div className="flex h-64 items-center justify-center"><div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" /></div>
+  }
+
+  const scoreData = [{ value: dailyScore?.score || 0, fill: 'url(#scoreGrad)' }]
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -158,14 +141,16 @@ function HomeTab() {
           icon={Flame}
           title="Today's Habits"
           action={
-            <motion.button whileTap={{ scale: 0.95 }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer">
+            <motion.button onClick={onAddHabit} whileTap={{ scale: 0.95 }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer">
               <Plus size={14} /> Add
             </motion.button>
           }
         />
         <div className="space-y-2.5">
-          {HABITS.map((h, i) => (
-            <HabitCard key={h.id} {...h} delay={0.3 + i * 0.08} />
+          {habits.length === 0 ? (
+            <p className="text-zinc-500 text-xs text-center py-4">No habits yet. Click + Add to start.</p>
+          ) : habits.map((h, i) => (
+            <HabitCard key={h.id} id={h.id} name={h.name} icon={Flame} streak={h.currentStreak || 0} color="#00f3ff" delay={0.3 + i * 0.08} />
           ))}
         </div>
         {/* Weekly dots */}
@@ -183,8 +168,10 @@ function HomeTab() {
       <Card delay={0.4}>
         <CardHeader icon={Utensils} title="Nutrition Log" />
         <div className="space-y-2.5">
-          {FOOD_LOG.map((f, i) => (
-            <div key={i}>
+          {foodLogs.length === 0 ? (
+            <p className="text-zinc-500 text-xs text-center py-4">No food logged yet.</p>
+          ) : foodLogs.map((f, i) => (
+            <div key={f.id}>
               <motion.button
                 onClick={() => setExpandedFood(expandedFood === i ? null : i)}
                 whileTap={{ scale: 0.98 }}
@@ -192,11 +179,11 @@ function HomeTab() {
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">{f.meal}</p>
-                    <p className="text-xs text-zinc-200 mt-0.5">{f.desc}</p>
+                    <p className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Meal</p>
+                    <p className="text-xs text-zinc-200 mt-0.5">{f.description}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-sm font-bold text-cyan-300">{f.kcal}</span>
+                    <span className="font-mono text-sm font-bold text-cyan-300">{f.calories}</span>
                     <span className="text-[9px] text-zinc-500">kcal</span>
                     <ChevronRight size={14} className={`text-zinc-600 transition-transform ${expandedFood === i ? 'rotate-90' : ''}`} />
                   </div>
@@ -211,12 +198,12 @@ function HomeTab() {
                     className="overflow-hidden"
                   >
                     <div className="glass-card p-3 mt-1 space-y-2">
-                      <NutrientBar label="Protein" value={f.protein} max={50} color="#00f3ff" />
-                      <NutrientBar label="Carbs" value={f.carbs} max={60} color="#bf00ff" />
-                      <NutrientBar label="Fat" value={f.fat} max={40} color="#f97316" />
+                      <NutrientBar label="Protein" value={f.protein || 0} max={50} color="#00f3ff" />
+                      <NutrientBar label="Carbs" value={f.carbs || 0} max={60} color="#bf00ff" />
+                      <NutrientBar label="Fat" value={f.fat || 0} max={40} color="#f97316" />
                       <div className="pt-2 border-t border-white/5 space-y-2">
-                        <NutrientBar label="Natural Sugar" value={f.natSugar} max={20} color="#22c55e" />
-                        <NutrientBar label="Added Sugar" value={f.addSugar} max={20} color="#ef4444" />
+                        <NutrientBar label="Natural Sugar" value={f.naturalSugar || 0} max={20} color="#22c55e" />
+                        <NutrientBar label="Added Sugar" value={f.addedSugar || 0} max={20} color="#ef4444" />
                       </div>
                     </div>
                   </motion.div>
@@ -231,24 +218,26 @@ function HomeTab() {
       <Card delay={0.5}>
         <CardHeader icon={Activity} title="Activity Log" />
         <div className="space-y-2.5">
-          {ACTIVITIES.map((a, i) => (
+          {activityLogs.length === 0 ? (
+            <p className="text-zinc-500 text-xs text-center py-4">No activities logged yet.</p>
+          ) : activityLogs.map((a, i) => (
             <motion.div
-              key={i}
+              key={a.id}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.5 + i * 0.1 }}
               className="glass-card p-3 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${a.color}15` }}>
-                  <a.icon size={18} style={{ color: a.color }} />
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `#bf00ff15` }}>
+                  <Activity size={18} style={{ color: '#bf00ff' }} />
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-zinc-200">{a.name}</p>
-                  <p className="text-[10px] text-zinc-500">{a.dur}</p>
+                  <p className="text-[10px] text-zinc-500">{a.duration} min</p>
                 </div>
               </div>
-              <span className="font-mono text-sm font-bold text-orange-300">{a.kcal} <span className="text-[9px] text-zinc-500">kcal</span></span>
+              <span className="font-mono text-sm font-bold text-orange-300">{a.caloriesBurned} <span className="text-[9px] text-zinc-500">kcal</span></span>
             </motion.div>
           ))}
         </div>
@@ -278,7 +267,7 @@ function HomeTab() {
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
             {chartTab === 'calories' ? (
-              <LineChart data={CHART_DATA}>
+              <LineChart data={[]}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
@@ -292,7 +281,7 @@ function HomeTab() {
                 <Line type="monotone" dataKey="cal" stroke="url(#calLine)" strokeWidth={2.5} dot={{ fill: '#00f3ff', r: 3 }} activeDot={{ r: 5, fill: '#00f3ff' }} />
               </LineChart>
             ) : chartTab === 'sugar' ? (
-              <BarChart data={CHART_DATA}>
+              <BarChart data={[]}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
@@ -308,40 +297,95 @@ function HomeTab() {
           </ResponsiveContainer>
         </div>
       </Card>
+      {/* AI Coach Panel */}
+      <Card delay={0.7} span="md:col-span-2 lg:col-span-4">
+        <AICoach />
+      </Card>
     </div>
   )
 }
 
 function HealthTab() {
+  const metrics = [
+    { label: 'Resting HR', value: '62', unit: 'bpm', color: '#ef4444', icon: Heart },
+    { label: 'Sleep Score', value: '87', unit: '/100', color: '#8b5cf6', icon: Moon },
+    { label: 'Hydration', value: '2.4', unit: 'L', color: '#00f3ff', icon: Droplets },
+    { label: 'Steps', value: '8,420', unit: 'steps', color: '#22c55e', icon: Activity },
+  ]
   return (
-    <Card>
-      <div className="flex flex-col items-center justify-center py-16">
-        <Heart size={40} className="text-cyan-400/20 mb-3" />
-        <p className="text-zinc-500 text-sm font-medium">Health Insights</p>
-        <p className="text-zinc-600 text-xs mt-1">Coming soon</p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        {metrics.map((m, i) => (
+          <Card key={m.label} delay={i * 0.08}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${m.color}15` }}>
+                <m.icon size={18} style={{ color: m.color }} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{m.label}</p>
+                <p className="text-xl font-black text-zinc-100">{m.value}<span className="text-xs text-zinc-500 ml-1">{m.unit}</span></p>
+              </div>
+            </div>
+          </Card>
+        ))}
       </div>
-    </Card>
+      <Card delay={0.35}>
+        <CardHeader icon={Heart} title="Weekly Wellness" />
+        <div className="space-y-3">
+          {[{ label: 'Avg Sleep', val: '7.2h', pct: 90 }, { label: 'Recovery', val: '85%', pct: 85 }, { label: 'Stress', val: 'Low', pct: 25 }].map(r => (
+            <div key={r.label}>
+              <div className="flex justify-between mb-1">
+                <span className="text-xs text-zinc-400">{r.label}</span>
+                <span className="text-xs font-bold text-zinc-200">{r.val}</span>
+              </div>
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <motion.div initial={{ width: 0 }} animate={{ width: `${r.pct}%` }} transition={{ duration: 1, delay: 0.5 }} className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-purple-500" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
   )
 }
 
 function ProgressTab() {
-  return (
-    <Card>
-      <div className="flex flex-col items-center justify-center py-16">
-        <BarChart3 size={40} className="text-purple-400/20 mb-3" />
-        <p className="text-zinc-500 text-sm font-medium">Progress Reports</p>
-        <p className="text-zinc-600 text-xs mt-1">Coming soon</p>
-      </div>
-    </Card>
-  )
+  return <ProgressAnalytics />
 }
 
 
 
 // ─── Main Export ───
 export default function DashboardPage() {
+  const { setDashboardData, isLoading, user } = useAuraStore()
   const [tab, setTab] = useState('home')
+  const [actionMenu, setActionMenu] = useState(false)
+  const [showHabitModal, setShowHabitModal] = useState(false)
+  const [showFoodModal, setShowFoodModal] = useState(false)
+  const [showActivityModal, setShowActivityModal] = useState(false)
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  useEffect(() => {
+    getDashboardData().then(res => {
+      if (res.success) {
+        setDashboardData(res.data)
+      } else {
+        console.error("Dashboard Load Error:", res.error);
+        alert(`Dashboard Load Error: ${res.error}`);
+        useAuraStore.setState({ isLoading: false }); // Stop spinner so we see blank state at least
+      }
+    }).catch(err => {
+      console.error("Fetch exception:", err);
+      alert(`Fetch Exception: ${err.message}`);
+      useAuraStore.setState({ isLoading: false });
+    })
+  }, [setDashboardData])
+
+  const handleActionSelect = (id) => {
+    if (id === 'habit') setShowHabitModal(true)
+    else if (id === 'food') setShowFoodModal(true)
+    else if (id === 'activity') setShowActivityModal(true)
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] pb-24">
@@ -350,7 +394,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">{today}</p>
-            <h1 className="text-lg font-bold text-zinc-100 mt-0.5">Hello, <span className="gradient-text">Alex</span></h1>
+            <h1 className="text-lg font-bold text-zinc-100 mt-0.5">Hello, <span className="gradient-text">{isLoading ? '...' : user?.name || 'User'}</span></h1>
           </div>
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-purple-500 flex items-center justify-center text-sm font-black text-white">
             A
@@ -361,14 +405,14 @@ export default function DashboardPage() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-6 pt-5">
         <AnimatePresence mode="wait">
-          {tab === 'home' && <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><HomeTab /></motion.div>}
+          {tab === 'home' && <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><HomeTab onAddHabit={() => setShowHabitModal(true)} /></motion.div>}
           {tab === 'health' && <motion.div key="health" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><HealthTab /></motion.div>}
           {tab === 'progress' && <motion.div key="progress" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><ProgressTab /></motion.div>}
           {tab === 'profile' && (
             <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <Card>
                 <div className="flex flex-col items-center justify-center py-16">
-                  <p className="text-zinc-500 text-sm">Profile page</p>
+                  <p className="text-zinc-500 text-sm">Visit <span className="text-cyan-400">/profile</span> for full settings</p>
                 </div>
               </Card>
             </motion.div>
@@ -376,7 +420,13 @@ export default function DashboardPage() {
         </AnimatePresence>
       </main>
 
-      <BottomNav active={tab} onChange={setTab} />
+      <BottomNav active={tab} onChange={setTab} onAdd={() => setActionMenu(true)} />
+
+      {/* Modals */}
+      <GlobalActionMenu isOpen={actionMenu} onClose={() => setActionMenu(false)} onSelect={handleActionSelect} />
+      <HabitCreationModal isOpen={showHabitModal} onClose={() => setShowHabitModal(false)} />
+      <FoodLogModal isOpen={showFoodModal} onClose={() => setShowFoodModal(false)} />
+      <ActivityLogModal isOpen={showActivityModal} onClose={() => setShowActivityModal(false)} />
     </div>
   )
 }

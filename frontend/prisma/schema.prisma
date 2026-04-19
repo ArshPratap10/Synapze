@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String?  @unique
+  name      String
+  goal      String   // e.g., "Be Fit", "Lose Weight"
+  height    Float?
+  weight    Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  habits        Habit[]
+  foodLogs      FoodLog[]
+  activityLogs  ActivityLog[]
+  dailyScores   DailyScore[]
+}
+
+model Habit {
+  id            String     @id @default(uuid())
+  userId        String
+  name          String
+  frequency     String     // e.g., "daily"
+  currentStreak Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs      HabitLog[]
+
+  @@index([userId])
+}
+
+model HabitLog {
+  id            String   @id @default(uuid())
+  habitId       String
+  completedDate DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  habit         Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@index([habitId, completedDate])
+}
+
+model FoodLog {
+  id           String   @id @default(uuid())
+  userId       String
+  description  String   // AI-cleaned meal name
+  calories     Int
+  protein      Float
+  carbs        Float
+  fat          Float
+  addedSugar   Float    @default(0)
+  naturalSugar Float    @default(0)
+  loggedAt     DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+}
+
+model ActivityLog {
+  id             String   @id @default(uuid())
+  userId         String
+  name           String   // AI-cleaned activity name
+  duration       Int?     // duration in minutes
+  caloriesBurned Int
+  loggedAt       DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+}
+
+model DailyScore {
+  id        String   @id @default(uuid())
+  userId    String
+  date      DateTime @db.Date
+  score     Int      // 0-100
+  insight   String   // AI Coach generated message
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}

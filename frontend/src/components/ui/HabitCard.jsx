@@ -2,9 +2,16 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, Flame } from 'lucide-react'
+import { logHabitCompletion } from '@/app/actions'
 
-export default function HabitCard({ icon: Icon, name, streak, color, delay = 0 }) {
+export default function HabitCard({ id, icon: Icon, name, streak, color, delay = 0 }) {
   const [done, setDone] = useState(false)
+
+  const handleToggle = async () => {
+    if (done) return; // Prevent unchecking for simplicity
+    setDone(true);
+    await logHabitCompletion(id);
+  }
 
   return (
     <motion.div
@@ -27,7 +34,7 @@ export default function HabitCard({ icon: Icon, name, streak, color, delay = 0 }
       </div>
       <motion.button
         whileTap={{ scale: 0.8 }}
-        onClick={() => setDone(!done)}
+        onClick={handleToggle}
         className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer ${
           done ? 'border-cyan-400 bg-cyan-400/20' : 'border-zinc-700 bg-transparent'
         }`}
