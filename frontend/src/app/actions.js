@@ -34,7 +34,7 @@ async function resilientAI(prompt) {
   // Groq Fallback
   console.log("[AI] All Gemini models failed. Attempting Groq fallback...");
   try {
-    const groqKey = "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";
+    const groqKey = process.env.GROQ_API_KEY;
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -211,7 +211,7 @@ export async function logFoodWithAI(description) {
 
     // 1. Try Nutrition Tracker API
     try {
-      const rapidApiKey = "305c7c8bc7msh23dc88b4cedacb0p16bcfdjsn271657f736ea";
+      const rapidApiKey = process.env.RAPIDAPI_KEY;
       const response = await fetch("https://nutrition-tracker-api.p.rapidapi.com/v1/calculate/natural", {
         method: "POST",
         headers: {
@@ -221,7 +221,7 @@ export async function logFoodWithAI(description) {
         },
         body: JSON.stringify({ text: description })
       });
-      
+
       if (response.ok) {
         const rawData = await response.json();
         if (rawData.success && rawData.data && rawData.data.totalNutrients) {
