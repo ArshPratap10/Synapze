@@ -138,11 +138,16 @@ export async function clarifyFoodQuery(chatHistory) {
 Conversation:
 ${conversation}
 
-If you have enough information, return ONLY this JSON:
+If you have enough information (e.g., "1kg grilled chicken", "500ml milk", "2 slices of bread"), return ONLY this JSON:
 { "status": "success" }
 
-If the food description is too vague (e.g., just "Rice", "Chicken"), ask a single, short clarifying question to get the missing details (e.g., "How much rice, and was it white or brown?").
-Return ONLY this JSON in that case:
+RULES FOR CLARIFICATION:
+1. If a quantity is provided with ANY standard unit (kg, g, oz, lbs, ml, etc.), it is SUFFICIENT. DO NOT ask for unit conversions (e.g., don't ask for grams if they gave kg).
+2. If the user mentions a common portion (e.g., "a bowl", "a plate", "one whole"), it is SUFFICIENT.
+3. ONLY ask a question if the description is truly vague (e.g., just "Rice", "Chicken" with no amount or type).
+4. Keep questions extremely short and friendly.
+
+Return ONLY this JSON if clarification is truly needed:
 { "status": "clarification_needed", "question": "Your short question here" }`;
 
     const data = await resilientAI(prompt);
@@ -163,11 +168,15 @@ export async function clarifyActivityQuery(chatHistory) {
 Conversation:
 ${conversation}
 
-If you have enough information, return ONLY this JSON:
+If you have enough information (e.g., "30 min run", "5km walk", "1 hour gym"), return ONLY this JSON:
 { "status": "success" }
 
-If the activity description is too vague (e.g., just "ran", "worked out", "lifted weights"), ask a single, short clarifying question to get the missing details (e.g., "How long did you run and at what pace?").
-Return ONLY this JSON in that case:
+RULES:
+1. If duration or distance is provided, it is SUFFICIENT.
+2. DO NOT ask for redundant details if the user's intent is clear.
+3. ONLY ask if it's impossible to estimate (e.g., just "I worked out").
+
+Return ONLY this JSON if clarification is truly needed:
 { "status": "clarification_needed", "question": "Your short question here" }`;
 
     const data = await resilientAI(prompt);
@@ -188,11 +197,15 @@ export async function clarifyDayQuery(chatHistory) {
 Conversation:
 ${conversation}
 
-If you have enough information for all foods and activities mentioned (e.g. quantities and types of food, duration and intensity of activities), or if they didn't mention any foods or activities that need clarification, return ONLY this JSON:
+If you have enough information for all mentioned items, return ONLY this JSON:
 { "status": "success" }
 
-If any food or activity description is too vague (e.g., "I had a cold drink", "I ran", "I ate chicken"), ask a single, short clarifying question to get the missing details (e.g., "What kind of cold drink and how many ml?", "How long did you run?").
-Return ONLY this JSON in that case:
+RULES:
+1. DO NOT ask for unit conversions. "1kg" is as specific as "1000g".
+2. If the user provided a quantity for a food or a duration for an activity, it is SUFFICIENT.
+3. ONLY ask if a major piece of info is missing (e.g., what they ate, or how long they exercised).
+
+Return ONLY this JSON if clarification is truly needed:
 { "status": "clarification_needed", "question": "Your short question here" }`;
 
     const data = await resilientAI(prompt);
@@ -248,13 +261,14 @@ export async function logFoodWithAI(description) {
 
     // 2. Fallback to Groq/Gemini if API failed
     if (!data) {
-      const prompt = `You are an expert nutritionist. Analyze this food/meal and return accurate nutritional data.
+      const prompt = `You are an expert nutritionist. Analyze the following meal description and provide accurate nutritional estimates. 
+If multiple items are mentioned, provide the total for the entire meal.
 
-Food: "${description}"
+Food Description: "${description}"
 
 Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
 {
-  "description": "clean meal name",
+  "description": "Clean, descriptive meal name",
   "calories": 0,
   "protein": 0.0,
   "carbs": 0.0,
@@ -305,13 +319,13 @@ export async function logActivityWithAI(description) {
     const weight = user?.weight || 70;
     const height = user?.height || 175;
 
-    const prompt = `You are an expert fitness coach. Analyze this workout and estimate calories burned.
-User: weight ${weight}kg, height ${height}cm.
-Activity: "${description}"
+    const prompt = `You are an expert fitness coach. Estimate the calories burned for this activity based on the user's profile.
+User Profile: Weight ${weight}kg, Height ${height}cm.
+Activity Description: "${description}"
 
-Return ONLY valid JSON (no markdown, no explanation):
+Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
 {
-  "name": "short clean activity name",
+  "name": "Short, clean activity name",
   "duration": 30,
   "caloriesBurned": 200
 }`;

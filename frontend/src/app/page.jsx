@@ -10,6 +10,12 @@ import { GlobalActionMenu, HabitCreationModal, FoodLogModal, ActivityLogModal } 
 import { ProgressAnalytics } from '@/components/ui/ProgressAnalytics'
 import { useAuraStore } from '@/lib/store'
 import { getDashboardData, getAnalyticsData, generateDailyScore, deleteFoodLog, deleteActivityLog, clarifyDayQuery, getDataForDate } from '@/app/actions'
+import dynamic from 'next/dynamic'
+
+const NeuralScoreParticles = dynamic(
+  () => import('@/components/ui/NeuralScoreParticles'),
+  { ssr: false, loading: () => <div className="w-full h-[180px] flex items-center justify-center"><div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" /></div> }
+)
 
 function Card({ children, className = '', delay = 0, span = '' }) {
   return (
@@ -97,9 +103,11 @@ function DatePicker({ selectedDate, onSelect, joinedAt }) {
 function CardHeader({ icon: Icon, title, action }) {
   return (
     <div className="flex items-center justify-between mb-4">
-      <div className="flex items-center gap-2">
-        <Icon size={16} className="text-cyan-400" />
-        <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-300">{title}</h3>
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-cyan-400/10 flex items-center justify-center shrink-0">
+          <Icon size={15} className="text-cyan-400" />
+        </div>
+        <h3 className="text-sm font-bold text-zinc-100 tracking-tight">{title}</h3>
       </div>
       {action}
     </div>
@@ -120,6 +128,52 @@ function Counter({ target }) {
     return () => cancelAnimationFrame(frame)
   }, [target])
   return <span className="font-mono">{val.toLocaleString()}</span>
+}
+
+// ── Macro Ring ────────────────────────────────────────────────────────────────
+function MacroRing({ value, target, color, label, unit = 'g' }) {
+  const pct = Math.min(value / target, 1)
+  const isOver = value > target
+  const ringColor = isOver ? '#ef4444' : color
+  const r = 32, circ = 2 * Math.PI * r
+  const stroke = circ * (1 - pct)
+  
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-20 h-20">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+          <circle cx="40" cy="40" r={r} fill="none" stroke={ringColor} strokeWidth="6"
+            strokeDasharray={circ} strokeDashoffset={stroke}
+            strokeLinecap="round" transform="rotate(-90 40 40)"
+            style={{ transition: 'stroke-dashoffset 1.5s ease', filter: `drop-shadow(0 0 4px ${ringColor}40)` }}/>
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={`text-base font-black num-display leading-none ${isOver ? 'text-red-400' : 'text-white'}`}>{Math.round(value)}</span>
+          <span className="text-[9px] font-bold text-zinc-500 uppercase mt-1">{unit}</span>
+        </div>
+      </div>
+      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{label}</span>
+    </div>
+  )
+}
+
+// ── Sugar Bar ─────────────────────────────────────────────────────────────────
+function SugarBar({ natural, added }) {
+  const total = natural + added || 1
+  const natPct = (natural / total) * 100
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between">
+        <span className="text-xs font-semibold text-emerald-400">🌿 Natural <span className="font-black">{Math.round(natural)}g</span></span>
+        <span className="text-xs font-semibold text-amber-400">⚡ Added <span className="font-black">{Math.round(added)}g</span></span>
+      </div>
+      <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-white/8">
+        <div className="h-full rounded-l-full bg-emerald-500" style={{ width: `${natPct}%`, transition: 'width 1s ease' }}/>
+        <div className="h-full rounded-r-full bg-amber-400" style={{ width: `${100 - natPct}%`, transition: 'width 1s ease' }}/>
+      </div>
+    </div>
+  )
 }
 
 // ── Home Tab ──────────────────────────────────────────────────────────────────
@@ -209,66 +263,87 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical 
     }
   }
 
+  const scoreLevel = (dailyScore?.score || 0) > 80 ? 'Elite' : (dailyScore?.score || 0) > 50 ? 'On Track' : 'Building'
+  const scoreColor = (dailyScore?.score || 0) > 80 ? '#10b981' : (dailyScore?.score || 0) > 50 ? '#00f3ff' : '#fbbf24'
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="space-y-4">
 
-      {/* Neural Score */}
-      <Card delay={0.05} span="lg:col-span-2">
-        <div className="flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative w-36 h-36 shrink-0">
-            <svg width="0" height="0" style={{ position: 'absolute' }}>
-              <defs>
-                <linearGradient id="neural-score-grad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#00f3ff" />
-                  <stop offset="100%" stopColor="#bf00ff" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadialBarChart innerRadius="78%" outerRadius="100%" startAngle={90} endAngle={-270}
-                data={[{ value: Math.max(dailyScore?.score || 0, 1), fill: 'url(#neural-score-grad)' }]} barSize={10}>
-                <RadialBar dataKey="value" cornerRadius={10} background={{ fill: 'rgba(255,255,255,0.04)' }} />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black gradient-text"><Counter target={dailyScore?.score || 0} /></span>
-              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-500 mt-1">Neural Score</span>
+      {/* ── Row 1: Score + Energy/Macros Stack ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Neural Score */}
+        <Card delay={0.05} className="flex flex-col h-full">
+          <div className="flex flex-col gap-3 flex-1">
+            <div className="rounded-xl overflow-hidden flex-1 flex flex-col relative min-h-[260px]" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <NeuralScoreParticles score={dailyScore?.score || 0} />
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Neural Score</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: `${scoreColor}18`, border: `1px solid ${scoreColor}35` }}>
+                <Zap size={11} style={{ color: scoreColor }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: scoreColor }}>{scoreLevel}</span>
+              </div>
+            </div>
+            {dailyScore?.insight ? (
+              <div className="space-y-1.5 pt-2 border-t border-white/5">
+                <p className="text-sm font-semibold text-zinc-100 leading-relaxed">{dailyScore.insight.split('.')[0]}.</p>
+                <div className="space-y-1 mt-1">
+                  <div className="flex items-start gap-2"><span className="text-emerald-400 text-sm shrink-0">✓</span><span className="text-sm text-zinc-300">Keep up your momentum — consistency compounds!</span></div>
+                  <div className="flex items-start gap-2"><span className="text-amber-400 text-sm shrink-0">💡</span><span className="text-sm text-zinc-300">{dailyScore.insight.split('.')[1]?.trim() || 'Log your next meal to stay on track.'}</span></div>
+                  <div className="flex items-start gap-2"><span className="text-cyan-400 text-sm shrink-0">ℹ</span><span className="text-sm text-zinc-300">{(targetCals - totalCalIn + totalCalOut).toLocaleString()} kcal remaining today</span></div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-400 text-center pb-1">Log your day in the Health tab to generate your score.</p>
+            )}
           </div>
-          <div className="flex-1 text-center sm:text-left">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-400/10 mb-3">
-              <Zap size={12} className="text-cyan-400" />
-              <span className="text-[10px] font-bold uppercase text-cyan-400 tracking-wider">
-                {(dailyScore?.score || 0) > 80 ? 'Elite' : (dailyScore?.score || 0) > 50 ? 'Steady' : 'Needs Focus'}
-              </span>
-            </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
-              {dailyScore?.insight || 'Use the Health tab to log your day and generate your AI score.'}
-            </p>
-          </div>
-        </div>
-      </Card>
+        </Card>
 
-      {/* Net Energy */}
-      <Card delay={0.1} span="lg:col-span-2">
-        <CardHeader icon={Zap} title="Net Energy Balance" />
-        <div className="grid grid-cols-3 gap-3 text-center">
-          {[
-            { icon: Apple, label: 'kcal in', value: totalCalIn, color: 'emerald' },
-            { icon: Flame, label: 'kcal out', value: totalCalOut, color: 'orange' },
-            { icon: TrendingUp, label: net >= 0 ? 'surplus' : 'deficit', value: Math.abs(net), color: 'purple' },
-          ].map(({ icon: Icon, label, value, color }) => (
-            <div key={label} className={`glass-card p-3 !bg-${color}-500/5 !border-${color}-500/10`}>
-              <Icon size={18} className={`text-${color}-400 mx-auto mb-1`} />
-              <p className={`text-lg font-black text-${color}-300`}><Counter target={value} /></p>
-              <p className="text-[9px] uppercase tracking-wider text-zinc-500 mt-0.5">{label}</p>
+        {/* Right Column Stack: Energy + Macros */}
+        <div className="flex flex-col gap-4">
+          {/* Net Energy */}
+          <Card delay={0.1}>
+            <CardHeader icon={Zap} title="Net Energy Balance" />
+            <div className="grid grid-cols-3 gap-3 text-center">
+              {[
+                { icon: Apple, label: 'In', value: totalCalIn, color: 'emerald' },
+                { icon: Flame, label: 'Out', value: totalCalOut, color: 'orange' },
+                { icon: TrendingUp, label: 'Net', value: net, color: 'purple' },
+              ].map(({ icon: Icon, label, value, color }) => (
+                <div key={label} className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                  <Icon size={16} className={`text-${color}-400 mx-auto mb-1`} />
+                  <p className="text-xl font-black text-zinc-100 leading-none"><Counter target={Math.abs(value)} /></p>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">{label}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </Card>
+          </Card>
 
-      {/* Habits */}
-      <Card delay={0.15} span="md:col-span-2">
+          {/* Daily Macros */}
+          <Card delay={0.15}>
+            <CardHeader icon={BarChart3} title="Daily Macros" />
+            <div className="flex justify-around items-center mb-4">
+              <MacroRing value={totalCalIn} target={targetCals} color="#fbbf24" label="Calories" unit="kcal" />
+              <MacroRing value={totalProtein} target={targetProtein} color="#00f3ff" label="Protein" />
+              <MacroRing value={totalCarbs} target={targetCarbs} color="#bf00ff" label="Carbs" />
+              <MacroRing value={totalFat} target={targetFat} color="#f97316" label="Fat" />
+            </div>
+            <SugarBar natural={totalNatSugar} added={totalAddedSugar} />
+          </Card>
+        </div>
+      </div>{/* end row1 */}
+
+
+
+
+      {/* ── Row 2: 60/40 Split ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+        {/* LEFT 60% — Habits + Food Log */}
+        <div className="lg:col-span-3 space-y-4">
+
+        {/* Habits */}
+        <Card delay={0.15}>
         <CardHeader icon={Flame} title="Today&apos;s Tasks"
           action={
             <button onClick={onAddHabit} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer hover:bg-cyan-400/20 transition-colors">
@@ -286,58 +361,13 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical 
           }
         </div>
       </Card>
+        </div>{/* end left */}
 
-      {/* Food Log */}
-      <Card delay={0.2}>
-        <CardHeader icon={Utensils} title="Nutrition Log"
-          action={!isHistorical && (
-            <button onClick={onAddFood} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer hover:bg-cyan-400/20 transition-colors">
-              <Plus size={14} /> Add
-            </button>
-          )}
-        />
-        <div className="space-y-2">
-          {foodLogs.length === 0
-            ? <p className="text-zinc-500 text-xs text-center py-4">No food logged yet.</p>
-            : foodLogs.map((f, i) => (
-              <div key={f.id}>
-                <div className="flex items-center justify-between glass-card p-3 !bg-white/[0.02] group">
-                  <button onClick={() => setExpandedFood(expandedFood === i ? null : i)} className="flex-1 text-left border-none bg-transparent cursor-pointer">
-                    <p className="text-xs text-zinc-200">{f.description}</p>
-                    <p className="text-[10px] text-cyan-400 font-mono font-bold mt-0.5">{f.calories} kcal</p>
-                  </button>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setExpandedFood(expandedFood === i ? null : i)} className="p-1 border-none bg-transparent cursor-pointer text-zinc-500">
-                      {expandedFood === i ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                    <button onClick={() => handleDeleteFood(f.id)} className="p-1 border-none bg-transparent cursor-pointer text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-                <AnimatePresence>
-                  {expandedFood === i && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="glass-card p-3 mt-1 space-y-1.5">
-                        <NutrientBar label="Protein" value={Math.round(f.protein || 0)} max={50} color="#00f3ff" />
-                        <NutrientBar label="Carbs"   value={Math.round(f.carbs   || 0)} max={80} color="#bf00ff" />
-                        <NutrientBar label="Fat"     value={Math.round(f.fat     || 0)} max={40} color="#f97316" />
-                        <div className="border-t border-white/5 pt-1.5 space-y-1.5">
-                          <NutrientBar label="Natural Sugar" value={Math.round(f.naturalSugar || 0)} max={20} color="#22c55e" />
-                          <NutrientBar label="Added Sugar"   value={Math.round(f.addedSugar   || 0)} max={20} color="#ef4444" />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            ))
-          }
-        </div>
-      </Card>
+        {/* RIGHT 40% — Activity + Macro Summary */}
+        <div className="lg:col-span-2 space-y-4">
 
-      {/* Activity Log */}
-      <Card delay={0.25}>
+        {/* Activity Log */}
+        <Card delay={0.25}>
         <CardHeader icon={Activity} title="Activity Log"
           action={!isHistorical && (
             <button onClick={onAddActivity} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer hover:bg-cyan-400/20 transition-colors">
@@ -371,8 +401,152 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical 
         </div>
       </Card>
 
-      {/* Trend Chart */}
-      <Card delay={0.3} span="md:col-span-2 lg:col-span-4">
+      {/* Nutrition Log (List view) */}
+      <Card delay={0.2}>
+        <CardHeader icon={Utensils} title="Nutrition Log"
+          action={!isHistorical && (
+            <button onClick={onAddFood} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-400/10 text-cyan-400 text-[10px] font-bold uppercase tracking-wider border-none cursor-pointer hover:bg-cyan-400/20 transition-colors">
+              <Plus size={14} /> Add
+            </button>
+          )}
+        />
+        <div className="space-y-2">
+          {foodLogs.length === 0 ? (
+            <p className="text-zinc-500 text-xs text-center py-4">No food logged yet.</p>
+          ) : (
+            foodLogs.map((f) => (
+              <div key={f.id} className="glass-card p-3 border border-white/5 bg-white/[0.01]">
+                <div onClick={() => setExpandedFood(expandedFood === f.id ? null : f.id)} className="flex items-start justify-between cursor-pointer select-none">
+                  <div className="pr-4">
+                    <p className="text-sm font-medium text-zinc-200 leading-snug">{f.description}</p>
+                    <p className="text-[11px] font-bold text-cyan-400 mt-1">{f.calories} kcal</p>
+                  </div>
+                  <div className="text-zinc-500 mt-0.5">
+                    {expandedFood === f.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+                </div>
+                <AnimatePresence>
+                  {expandedFood === f.id && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="pt-3 mt-3 border-t border-white/5 space-y-2">
+                        <NutrientBar label="Protein" value={Math.round(f.protein || 0)} max={targetProtein} color="#00f3ff" />
+                        <NutrientBar label="Carbs" value={Math.round(f.carbs || 0)} max={targetCarbs} color="#bf00ff" />
+                        <NutrientBar label="Fat" value={Math.round(f.fat || 0)} max={targetFat} color="#f97316" />
+                        <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
+                          <span className="text-[10px] text-zinc-500">Nat Sugar: {Math.round(f.naturalSugar||0)}g | Added: {Math.round(f.addedSugar||0)}g</span>
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteFood(f.id); }} className="text-xs text-red-400 hover:text-red-300 border-none bg-transparent cursor-pointer">Delete</button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+        </div>{/* end right */}
+      </div>
+
+      {/* ── Row 3: Nutrition Summary Table (Full Width) ── */}
+      <Card delay={0.25}>
+        <CardHeader icon={Target} title="Daily Nutrition Summary" />
+        <div className="w-full overflow-x-auto">
+          {foodLogs.length === 0 ? (
+            <p className="text-zinc-500 text-xs text-center py-6">No food logged yet.</p>
+          ) : (
+            <table className="w-full text-left text-sm border-collapse whitespace-normal">
+              <thead>
+                <tr className="border-b border-white/5 text-zinc-500 uppercase text-[10px] font-bold tracking-widest">
+                  <th className="p-4 pl-6 w-12">#</th>
+                  <th className="p-4 min-w-[200px]">Food</th>
+                  <th className="p-4 text-right">Calories</th>
+                  <th className="p-4 text-right">Protein</th>
+                  <th className="p-4 text-right">Carbs</th>
+                  <th className="p-4 text-right">Fat</th>
+                  <th className="p-4 leading-tight text-right">Nat Sugar</th>
+                  <th className="p-4 leading-tight text-right">Add Sugar</th>
+                  <th className="p-4 w-12"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {foodLogs.map((f, i) => (
+                  <tr key={f.id} className="border-b border-white/5 group hover:bg-white/[0.03] transition-colors">
+                    <td className="p-4 pl-6 text-zinc-500 font-mono">{i + 1}</td>
+                    <td className="p-4 text-zinc-200 font-semibold max-w-xs">{f.description}</td>
+                    <td className="p-4 text-zinc-100 font-mono text-base text-right">{f.calories}</td>
+                    <td className="p-4 text-zinc-300 font-mono text-base text-right">{Math.round(f.protein || 0)}g</td>
+                    <td className="p-4 text-zinc-300 font-mono text-base text-right">{Math.round(f.carbs || 0)}g</td>
+                    <td className="p-4 text-zinc-300 font-mono text-base text-right">{Math.round(f.fat || 0)}g</td>
+                    <td className="p-4 text-zinc-300 font-mono text-base text-right">{Math.round(f.naturalSugar || 0)}g</td>
+                    <td className="p-4 text-zinc-300 font-mono text-base text-right">{Math.round(f.addedSugar || 0)}g</td>
+                    <td className="p-4 text-right pr-6">
+                      <button onClick={() => handleDeleteFood(f.id)} className="p-2 rounded-lg bg-red-500/0 cursor-pointer text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 border-none">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                
+                <tr className="border-b border-white/5 bg-white/[0.02]">
+                  <td colSpan={2} className="p-4 pl-6 font-black text-zinc-100 uppercase text-xs tracking-wider">Day total</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{totalCalIn}</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{Math.round(totalProtein)}g</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{Math.round(totalCarbs)}g</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{Math.round(totalFat)}g</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{Math.round(totalNatSugar)}g</td>
+                  <td className="p-4 font-black text-zinc-100 font-mono text-base text-right">{Math.round(totalAddedSugar)}g</td>
+                  <td></td>
+                </tr>
+
+                <tr className="border-b border-white/5 bg-black/20">
+                  <td colSpan={2} className="p-4 pl-6 font-bold text-zinc-500 uppercase text-[10px] tracking-widest">Target</td>
+                  <td className="p-4 text-zinc-500 font-mono text-sm text-right">{targetCals}</td>
+                  <td className="p-4 text-zinc-500 font-mono text-sm text-right">{targetProtein}g</td>
+                  <td className="p-4 text-zinc-500 font-mono text-sm text-right">{targetCarbs}g</td>
+                  <td className="p-4 text-zinc-500 font-mono text-sm text-right">{targetFat}g</td>
+                  <td className="p-4 text-zinc-600 font-mono text-sm text-right">—</td>
+                  <td className="p-4 text-zinc-500 font-mono text-sm text-right">&lt;25g</td>
+                  <td></td>
+                </tr>
+
+                <tr className="bg-white/[0.01]">
+                  <td colSpan={2} className="p-4 pl-6 font-black text-zinc-300 pt-6 pb-8 uppercase text-xs tracking-widest">Status</td>
+                  {[
+                    { val: totalCalIn, tar: targetCals, reverse: false, suffix: '' },
+                    { val: totalProtein, tar: targetProtein, reverse: true, suffix: 'g' },
+                    { val: totalCarbs, tar: targetCarbs, reverse: false, suffix: 'g' },
+                    { val: totalFat, tar: targetFat, reverse: false, suffix: 'g' },
+                    { val: null },
+                    { val: totalAddedSugar, tar: 25, reverse: false, suffix: 'g' }
+                  ].map((s, idx) => {
+                    if (s.val === null) return <td key={idx} className="p-4 text-zinc-700 text-right">—</td>
+                    const delta = s.val - s.tar
+                    const isGood = s.reverse ? delta >= 0 : delta <= 0
+                    const Icon = isGood ? Heart : Flame
+                    return (
+                      <td key={idx} className="p-4 pt-6 pb-8 font-mono text-right">
+                        <div className={`flex flex-col items-end gap-1 ${isGood ? 'text-emerald-400' : 'text-red-400'}`}>
+                          <span className="text-xs font-black">
+                            {delta > 0 ? '+' : ''}{Math.round(delta)}{s.suffix}
+                          </span>
+                          <div className={`p-1 rounded-md ${isGood ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                            <Icon size={14} fill="currentColor" className="opacity-80" />
+                          </div>
+                        </div>
+                      </td>
+                    )
+                  })}
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+      {/* ── Row 3: Trend Chart ── */}
+      <Card delay={0.35}>
         <CardHeader icon={TrendingUp} title="Trend Analysis" />
         <div className="flex gap-2 mb-4">
           {['calories', 'sugar', 'habits'].map(t => (
@@ -389,28 +563,28 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical 
               <ResponsiveContainer width="100%" height="100%">
                 {chartTab === 'calories' ? (
                   <BarChart data={liveAnalytics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} unit=" kcal" width={55} />
+                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12 }} />
                     <Bar dataKey="calories" name="Intake" fill="#FBBF24" radius={[4,4,0,0]} />
-                    <Bar dataKey="burned"   name="Burned" fill="#00f3ff" radius={[4,4,0,0]} opacity={0.7} />
+                    <Bar dataKey="burned"   name="Burned" fill="#00f3ff" radius={[4,4,0,0]} opacity={0.8} />
                   </BarChart>
                 ) : chartTab === 'sugar' ? (
                   <BarChart data={liveAnalytics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} unit=" g" />
+                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12 }} />
                     <Bar dataKey="naturalSugar" name="Natural" fill="#22c55e" radius={[4,4,0,0]} />
-                    <Bar dataKey="addedSugar"   name="Added"   fill="#ef4444" radius={[4,4,0,0]} />
+                    <Bar dataKey="addedSugar"   name="Added"   fill="#f59e0b" radius={[4,4,0,0]} />
                   </BarChart>
                 ) : (
                   <LineChart data={liveAnalytics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+                    <Tooltip contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12 }} />
                     <Line type="monotone" dataKey="habitCompletion" name="Completion %" stroke="#a78bfa" strokeWidth={2.5} dot={{ fill: '#a78bfa', r: 3 }} />
                   </LineChart>
                 )}
@@ -420,85 +594,6 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical 
         }
       </Card>
 
-      {/* Today's Food Intake Table */}
-      <Card delay={0.35} span="md:col-span-2 lg:col-span-4" className="overflow-hidden">
-        <CardHeader icon={Utensils} title="Today's Food Intake" />
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-left text-xs border-collapse min-w-[600px]">
-            <thead>
-              <tr className="text-zinc-400 border-b border-white/10">
-                <th className="pb-3 px-2 font-normal w-8">#</th>
-                <th className="pb-3 px-2 font-normal">Food</th>
-                <th className="pb-3 px-2 font-normal">Calories</th>
-                <th className="pb-3 px-2 font-normal">Protein</th>
-                <th className="pb-3 px-2 font-normal">Carbs</th>
-                <th className="pb-3 px-2 font-normal">Fat</th>
-                <th className="pb-3 px-2 font-normal">Nat Sugar</th>
-                <th className="pb-3 px-2 font-normal">Added Sugar</th>
-              </tr>
-            </thead>
-            <tbody className="text-zinc-300">
-              {foodLogs.length === 0 ? (
-                <tr><td colSpan={8} className="py-4 text-center text-zinc-500">No food logged today.</td></tr>
-              ) : (
-                foodLogs.map((f, i) => (
-                  <tr key={f.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-2 font-mono text-zinc-500">{i + 1}</td>
-                    <td className="py-3 px-2">{f.description}</td>
-                    <td className="py-3 px-2">{f.calories}</td>
-                    <td className="py-3 px-2">{f.protein || 0}g</td>
-                    <td className="py-3 px-2">{f.carbs || 0}g</td>
-                    <td className="py-3 px-2">{f.fat || 0}g</td>
-                    <td className="py-3 px-2">{f.naturalSugar || 0}g</td>
-                    <td className="py-3 px-2">{f.addedSugar || 0}g</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            {foodLogs.length > 0 && (
-              <tfoot className="text-zinc-200">
-                <tr className="border-b border-white/10 bg-white/[0.01]">
-                  <td className="py-3 px-2 font-bold" colSpan={2}>Day total</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalCalIn}</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalProtein.toFixed(1)}g</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalCarbs.toFixed(1)}g</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalFat.toFixed(1)}g</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalNatSugar.toFixed(1)}g</td>
-                  <td className="py-3 px-2 font-bold font-mono">{totalAddedSugar.toFixed(1)}g</td>
-                </tr>
-                <tr className="border-b border-white/10 text-zinc-400 bg-white/[0.01]">
-                  <td className="py-3 px-2 font-bold" colSpan={2}>Target</td>
-                  <td className="py-3 px-2 font-mono">{targetCals}</td>
-                  <td className="py-3 px-2 font-mono">{targetProtein}g</td>
-                  <td className="py-3 px-2 font-mono">{targetCarbs}g</td>
-                  <td className="py-3 px-2 font-mono">{targetFat}g</td>
-                  <td className="py-3 px-2 font-mono">—</td>
-                  <td className="py-3 px-2 font-mono">&lt;{targetAddedSugar}g</td>
-                </tr>
-                <tr className="bg-white/[0.01]">
-                  <td className="py-3 px-2 font-bold" colSpan={2}>Status</td>
-                  <td className={`py-3 px-2 font-mono font-bold ${calStatus.color}`}>
-                    {deltaCals > 0 ? '+' : ''}{deltaCals} {calStatus.icon}
-                  </td>
-                  <td className={`py-3 px-2 font-mono font-bold ${proStatus.color}`}>
-                    {deltaProtein > 0 ? '+' : ''}{deltaProtein.toFixed(1)}g {proStatus.icon}
-                  </td>
-                  <td className={`py-3 px-2 font-mono font-bold ${carbStatus.color}`}>
-                    {deltaCarbs > 0 ? '+' : ''}{deltaCarbs.toFixed(1)}g {carbStatus.icon}
-                  </td>
-                  <td className={`py-3 px-2 font-mono font-bold ${fatStatus.color}`}>
-                    {deltaFat > 0 ? '+' : ''}{deltaFat.toFixed(1)}g {fatStatus.icon}
-                  </td>
-                  <td className="py-3 px-2 font-mono text-zinc-400">—</td>
-                  <td className={`py-3 px-2 font-mono font-bold ${deltaAddedSugar > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                    {deltaAddedSugar > 0 ? '+' : ''}{deltaAddedSugar.toFixed(1)}g {deltaAddedSugar > 0 ? '❌' : '✅ 0g'}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      </Card>
     </div>
   )
 }
@@ -825,7 +920,7 @@ export default function DashboardPage() {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] pb-24">
+    <div className="min-h-screen bg-[#080810] pb-24 relative">
       <header className="sticky top-0 z-40 glass-nav py-4 px-5">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
@@ -849,7 +944,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 md:px-6 pt-5">
+      <main className="relative z-10 max-w-5xl mx-auto px-4 md:px-6 pt-5">
         {isLoading ? (
           <div className="flex h-64 items-center justify-center">
             <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />

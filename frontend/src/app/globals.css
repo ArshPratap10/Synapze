@@ -2,70 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap');
+
 @layer base {
   :root {
-    --radius: 0.75rem;
+    --radius: 0.875rem;
+    --card-bg: rgba(14, 14, 22, 0.82);
+    --border: rgba(255, 255, 255, 0.09);
+    --text-primary: #f0f0f5;
+    --text-secondary: #b4b4c0;
+    --text-muted: #7a7a8c;
+    --text-faint: #4a4a5a;
   }
 
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    -webkit-font-smoothing: antialiased;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
   body {
-    background: #0a0a0f;
-    color: #e4e4e7;
+    background: #080810;
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     overflow-x: hidden;
+    line-height: 1.5;
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.1);
-    border-radius: 3px;
-  }
+  /* Sharper rendering for small text */
+  p, span, div { text-rendering: optimizeLegibility; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+  h1, h2, h3 { letter-spacing: -0.02em; }
 }
 
 @layer components {
   .glass-card {
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
+    padding: 1.25rem;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .glass-card:hover {
+    border-color: rgba(255,255,255,0.14);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.03);
   }
 
   .glass-nav {
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(8, 8, 16, 0.92);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, #00f3ff 0%, #bf00ff 100%);
+    background: linear-gradient(135deg, #00e5ff 0%, #bf00ff 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
+  .gradient-border {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+                linear-gradient(135deg, rgba(0,229,255,0.3), rgba(191,0,255,0.3)) border-box;
+  }
+
   .btn-primary {
-    background: linear-gradient(135deg, #00f3ff, #bf00ff);
-    color: white;
-    font-weight: 600;
+    background: linear-gradient(135deg, #00e5ff, #bf00ff);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
     padding: 0.625rem 1.5rem;
-    border-radius: var(--radius);
+    border-radius: 0.75rem;
     border: none;
     cursor: pointer;
     transition: all 0.2s;
   }
-  .btn-primary:hover {
-    box-shadow: 0 0 25px rgba(0, 243, 255, 0.4);
+  .btn-primary:hover { box-shadow: 0 0 32px rgba(0,229,255,0.4); transform: translateY(-1px); }
+
+  /* Label used for card section titles */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Mono numbers */
+  .num-display {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* Custom scrollbar for chat */
+  .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+  /* Glow orb background */
+  .bg-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(110px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.055;
   }
 }

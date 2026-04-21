@@ -1,1 +1,14 @@
-{}
+{
+  "..\\app\\page.jsx -> @/components/ui/NeuralScoreParticles": {
+    "id": "..\\app\\page.jsx -> @/components/ui/NeuralScoreParticles",
+    "files": [
+      "static/chunks/_app-pages-browser_src_components_ui_NeuralScoreParticles_jsx.js"
+    ]
+  },
+  "..\\components\\ui\\NeuralScoreParticles.jsx -> three": {
+    "id": "..\\components\\ui\\NeuralScoreParticles.jsx -> three",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_three_build_three_module_js.js"
+    ]
+  }
+}
