@@ -80,7 +80,6 @@ export function NeuralScoreSection() {
                     <p className="text-white/40 text-sm">{t}</p>
                   </div>
                 ))}
-              </div>
             </motion.div>
 
             <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={FV} className="flex flex-col items-center">
