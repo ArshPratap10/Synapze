@@ -89,29 +89,28 @@ async function resilientAI(prompt) {
     console.warn("[AI] Gemini call crashed, attempting fallback...");
   }
     
-    // Minimal Groq Fallback (Optional, but safe to keep)
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey) {
-      try {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" }
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const content = data.choices?.[0]?.message?.content || "{}";
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
-        }
-        console.warn('[AI] Groq returned non-OK status:', res.status);
-      } catch (err) {
-        console.warn('[AI] Groq fallback failed:', err.message);
+  // Minimal Groq Fallback (Optional, but safe to keep)
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "{}";
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
       }
+      console.warn('[AI] Groq returned non-OK status:', res.status);
+    } catch (err) {
+      console.warn('[AI] Groq fallback failed:', err.message);
     }
   }
   return null;
