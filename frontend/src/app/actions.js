@@ -406,19 +406,27 @@ export async function confirmFoodLog(preview, dateStr = null) {
 
 export async function saveOnboardingProfile(form) {
   try {
-    const user = await prisma.user.update({
-      where: { id: await getUserId() },
-      data: {
-        weight: parseFloat(form.weight) || 70,
-        height: parseFloat(form.height) || 170,
-        age: parseInt(form.age) || 25,
-        gender: form.gender || 'male',
-        activityLevel: form.activityLevel || 'moderate',
-        goal: form.goal || 'Maintenance',
-        dietType: form.dietType || 'No Preference',
-        foodPrefs: JSON.stringify(form.foodPrefs || {}),
-        onboardingDone: true,
-      }
+    const userId = await getUserId();
+    const data = {
+      weight: parseFloat(form.weight) || 70,
+      height: parseFloat(form.height) || 170,
+      age: parseInt(form.age) || 25,
+      gender: form.gender || 'male',
+      activityLevel: form.activityLevel || 'moderate',
+      goal: form.goal || 'Maintenance',
+      dietType: form.dietType || 'No Preference',
+      foodPrefs: JSON.stringify(form.foodPrefs || {}),
+      onboardingDone: true,
+    };
+
+    const user = await prisma.user.upsert({
+      where: { id: userId },
+      update: data,
+      create: {
+        id: userId,
+        name: 'New User',
+        ...data,
+      },
     });
     return { success: true, data: JSON.parse(JSON.stringify(user)) };
   } catch (error) {
