@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { motion } from 'framer-motion'
 
 export default function NutrientBar({ label, value, max, color = '#00f3ff', unit = 'g' }) {
@@ -7,10 +7,10 @@ export default function NutrientBar({ label, value, max, color = '#00f3ff', unit
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-400">{label}</span>
-        <span className="text-xs font-mono text-zinc-300">{value}{unit}</span>
+        <span className="text-xs font-medium text-[#a09abc]">{label}</span>
+        <span className="text-xs font-mono text-[#f0ecff]">{value}{unit}</span>
       </div>
-      <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+      <div className="h-2 w-full rounded-full bg-[rgba(255,255,255,0.06)]/60 overflow-hidden">
         <motion.div
           className="h-full rounded-full"
           style={{ background: color }}
@@ -22,3 +22,4 @@ export default function NutrientBar({ label, value, max, color = '#00f3ff', unit
     </div>
   )
 }
+

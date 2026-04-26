@@ -1,0 +1,103 @@
+---
+---
+<section id="how-it-works" class="relative z-10 py-32 px-6 overflow-hidden">
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+    <div class="bg-orb w-[500px] h-[500px] top-0 -right-[200px]" style="background: radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%);"></div>
+  </div>
+
+  <div class="relative max-w-5xl mx-auto">
+    <div class="text-center mb-20">
+      <div class="badge mb-6 fade-up">AI Food Scanner</div>
+      <h2 class="text-4xl sm:text-5xl md:text-6xl font-heading italic mb-6 fade-up">
+        Speak. Snap.<br/>
+        <span class="text-gradient-cyan">Logged.</span>
+      </h2>
+      <p class="text-white/35 text-lg max-w-2xl mx-auto leading-relaxed fade-up">
+        Food tracking that respects your time. Describe a meal in plain words — or snap a photo. Our AI extracts exact macros, including the industry-first natural vs added sugar split.
+      </p>
+    </div>
+
+    <!-- Demo: Input → Result -->
+    <div class="grid md:grid-cols-2 gap-8 items-start">
+
+      <!-- Left: Input -->
+      <div class="fade-up">
+        <div class="liquid-glass-strong rounded-2xl p-8">
+          <p class="text-[10px] text-white/25 font-bold tracking-[0.2em] uppercase mb-4">Input</p>
+
+          <!-- Voice input -->
+          <div class="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] mb-4">
+            <div class="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center shrink-0" style="animation: pulse-ring 2s ease infinite;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f3ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </div>
+            <div>
+              <p class="text-white/60 text-sm italic">"2 scrambled eggs, a roti, and dal with rice"</p>
+              <p class="text-white/20 text-[10px] mt-1">Voice or text — your choice</p>
+            </div>
+          </div>
+
+          <!-- Photo input -->
+          <div class="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+            <div class="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </div>
+            <div>
+              <p class="text-white/60 text-sm">Or snap a photo of your meal</p>
+              <p class="text-white/20 text-[10px] mt-1">AI Vision identifies every ingredient</p>
+            </div>
+          </div>
+
+          <!-- Processing indicator -->
+          <div class="flex items-center justify-center gap-3 mt-6 py-3">
+            <div class="w-6 h-6 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin"></div>
+            <span class="text-cyan-400/60 text-xs font-semibold tracking-wider">AI Processing...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Result -->
+      <div class="fade-up">
+        <div class="liquid-glass-strong rounded-2xl p-8">
+          <div class="flex items-center justify-between mb-6">
+            <p class="text-[10px] text-white/25 font-bold tracking-[0.2em] uppercase">AI Result</p>
+            <span class="text-[10px] text-cyan-400 font-bold tracking-wider bg-cyan-500/10 px-3 py-1 rounded-full">✓ 1.8s</span>
+          </div>
+
+          <!-- Nutrients grid -->
+          <div class="grid grid-cols-2 gap-3 mb-6">
+            <div class="text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+              <p class="text-3xl font-black text-white">487</p>
+              <p class="text-[9px] text-white/25 font-bold tracking-[0.2em] uppercase mt-1">Calories</p>
+            </div>
+            <div class="text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+              <p class="text-3xl font-black text-cyan-400">24g</p>
+              <p class="text-[9px] text-white/25 font-bold tracking-[0.2em] uppercase mt-1">Protein</p>
+            </div>
+            <div class="text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+              <p class="text-3xl font-black text-violet-400">58g</p>
+              <p class="text-[9px] text-white/25 font-bold tracking-[0.2em] uppercase mt-1">Carbs</p>
+            </div>
+            <div class="text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+              <p class="text-3xl font-black text-amber-400">16g</p>
+              <p class="text-[9px] text-white/25 font-bold tracking-[0.2em] uppercase mt-1">Fat</p>
+            </div>
+          </div>
+
+          <!-- Sugar breakdown -->
+          <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+            <p class="text-[10px] text-white/25 font-bold tracking-[0.15em] uppercase mb-3">Sugar Intelligence™</p>
+            <div class="flex justify-between text-xs mb-2">
+              <span class="text-cyan-400 font-semibold">🌿 Natural <span class="font-black">8g</span></span>
+              <span class="text-amber-400 font-semibold">⚡ Added <span class="font-black">2g</span></span>
+            </div>
+            <div class="sugar-bar">
+              <div class="sugar-natural" style="width: 80%;"></div>
+              <div class="sugar-added" style="width: 20%;"></div>
+            </div>
+            <p class="text-[10px] text-white/15 text-center mt-3 italic">Industry-first: natural vs added sugar separation</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

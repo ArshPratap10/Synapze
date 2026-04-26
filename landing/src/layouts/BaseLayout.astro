@@ -1,0 +1,52 @@
+---
+const title = 'Synapze — The Human OS for Health, Nutrition & Habits'
+const description = 'Synapze replaces your fitness apps with one AI-powered dashboard. Track meals in 3 seconds, get your Neural Score, and gamify your health. Free forever.'
+const canonical = 'https://synapze.app'
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content={description} />
+  <meta name="keywords" content="AI health dashboard, neural score, habit tracker, nutrition tracker, food logging AI, calorie tracker, human OS, synapze" />
+  <meta name="robots" content="index, follow" />
+
+  <meta property="og:title" content="Synapze — Your Neural OS" />
+  <meta property="og:description" content={description} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Synapze" />
+  <meta property="og:url" content={canonical} />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Synapze — The Human OS" />
+  <meta name="twitter:description" content="One dashboard. AI food vision. Neural Score. Free forever." />
+
+  <link rel="canonical" href={canonical} />
+  <title>{title}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Synapze",
+    "applicationCategory": "HealthApplication",
+    "operatingSystem": "Web",
+    "description": description,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  })} />
+</head>
+<body>
+  <slot />
+
+  <script src="../scripts/scroll-animations.js"></script>
+  <script src="../scripts/particles.js"></script>
+</body>
+</html>

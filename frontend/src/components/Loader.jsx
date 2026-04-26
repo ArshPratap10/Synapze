@@ -1,8 +1,8 @@
 'use client'
 import { useRef, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Sparkles } from 'lucide-react'
 
-// Canvas-based particle system for performance
 function ParticleCanvas() {
   const canvasRef = useRef(null)
 
@@ -19,32 +19,29 @@ function ParticleCanvas() {
     resize()
     window.addEventListener('resize', resize)
 
-    // Create particles
-    const PARTICLE_COUNT = 70
-    const CONNECTION_DIST = 120
+    const PARTICLE_COUNT = 40
+    const CONNECTION_DIST = 140
     const particles = Array.from({ length: PARTICLE_COUNT }, () => ({
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.8,
-      vy: (Math.random() - 0.5) * 0.8,
-      size: Math.random() * 2.5 + 0.5,
-      color: Math.random() > 0.5 ? '0,243,255' : '191,0,255',
-      opacity: Math.random() * 0.6 + 0.2,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      size: Math.random() * 2 + 0.8,
+      color: Math.random() > 0.5 ? '124,107,196' : '167,139,250',
+      opacity: Math.random() * 0.4 + 0.15,
     }))
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-      // Draw connections
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x
           const dy = particles[i].y - particles[j].y
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist < CONNECTION_DIST) {
-            const alpha = (1 - dist / CONNECTION_DIST) * 0.15
+            const alpha = (1 - dist / CONNECTION_DIST) * 0.06
             ctx.beginPath()
-            ctx.strokeStyle = `rgba(0,243,255,${alpha})`
+            ctx.strokeStyle = `rgba(124,107,196,${alpha})`
             ctx.lineWidth = 0.5
             ctx.moveTo(particles[i].x, particles[i].y)
             ctx.lineTo(particles[j].x, particles[j].y)
@@ -52,25 +49,20 @@ function ParticleCanvas() {
           }
         }
       }
-
-      // Draw & update particles
       particles.forEach(p => {
         p.x += p.vx
         p.y += p.vy
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1
-
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
         ctx.fillStyle = `rgba(${p.color},${p.opacity})`
         ctx.fill()
-        // glow
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(${p.color},${p.opacity * 0.15})`
+        ctx.fillStyle = `rgba(${p.color},${p.opacity * 0.1})`
         ctx.fill()
       })
-
       animId = requestAnimationFrame(draw)
     }
     draw()
@@ -84,55 +76,13 @@ function ParticleCanvas() {
   return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
 }
 
-// Hexagon wireframe SVG
-function HexLogo() {
-  return (
-    <motion.div
-      animate={{ rotate: 360 }}
-      transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-      className="relative"
-    >
-      <svg width="80" height="80" viewBox="0 0 100 100" fill="none">
-        <motion.polygon
-          points="50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5"
-          stroke="url(#hexGrad)"
-          strokeWidth="1.5"
-          fill="none"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 2, ease: 'easeInOut' }}
-        />
-        <motion.polygon
-          points="50,20 78,35 78,65 50,80 22,65 22,35"
-          stroke="url(#hexGrad)"
-          strokeWidth="1"
-          fill="none"
-          opacity="0.4"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 2, delay: 0.5, ease: 'easeInOut' }}
-        />
-        <defs>
-          <linearGradient id="hexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#00f3ff" />
-            <stop offset="100%" stopColor="#bf00ff" />
-          </linearGradient>
-        </defs>
-      </svg>
-      {/* Center glow */}
-      <div className="absolute inset-0 rounded-full bg-cyan-400/10 blur-xl animate-pulse-glow" />
-    </motion.div>
-  )
-}
-
-// Animated dots
 function LoadingDots() {
   return (
-    <span className="inline-flex gap-1 ml-1">
+    <span className="inline-flex gap-1 ml-1.5">
       {[0, 1, 2].map(i => (
         <motion.span
           key={i}
-          className="w-1.5 h-1.5 rounded-full bg-cyan-400/60"
+          className="w-1.5 h-1.5 rounded-full bg-[#a78bfa]/50"
           animate={{ opacity: [0.2, 1, 0.2] }}
           transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
         />
@@ -161,28 +111,48 @@ export default function Loader({ onFinish }) {
       {!exiting && (
         <motion.div
           className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
-          style={{ background: '#0a0a0f' }}
+          style={{
+            background: 'var(--bg-primary)'
+          }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6 }}
         >
           <ParticleCanvas />
-          <div className="relative z-10 flex flex-col items-center gap-6">
-            <HexLogo />
+          <div className="relative z-10 flex flex-col items-center gap-5">
+            {/* Logo mark */}
+            <motion.div
+              className="w-16 h-16 rounded-3xl flex items-center justify-center relative overflow-hidden"
+              style={{ 
+                background: 'linear-gradient(135deg, #a78bfa, #c4b0f0)', 
+                boxShadow: '0 8px 32px rgba(167,139,250,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)' 
+              }}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+            >
+              {/* Glass shine */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent pointer-events-none" />
+              
+              <Sparkles className="w-8 h-8 text-white relative z-10" />
+            </motion.div>
+
             <motion.h1
-              className="text-lg font-bold tracking-[0.3em] uppercase gradient-text"
+              className="text-xl font-extrabold tracking-[0.2em] uppercase gradient-text"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
+              transition={{ delay: 0.3 }}
             >
-              Project Aura
+              Synapze
             </motion.h1>
+
             <motion.div
-              className="flex items-center text-xs tracking-[0.2em] text-zinc-500 uppercase"
+              className="flex items-center text-xs tracking-[0.15em] uppercase"
+              style={{ color: 'var(--text-muted)' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
+              transition={{ delay: 0.6 }}
             >
-              Loading your neural suite
+              Initializing your neural suite
               <LoadingDots />
             </motion.div>
           </div>

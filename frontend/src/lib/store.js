@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-export const useAuraStore = create((set, get) => ({
-  // ── State ──────────────────────────────────────────────────────────────────
+export const useSynapzeStore = create((set, get) => ({
+  // --- State ------------------------------------------------------------------
   user: null,
   habits: [],
   foodLogs: [],
@@ -11,7 +11,7 @@ export const useAuraStore = create((set, get) => ({
   isLoading: true,
   error: null,
 
-  // ── Bulk Loaders ───────────────────────────────────────────────────────────
+  // --- Bulk Loaders -----------------------------------------------------------
   setDashboardData: (data) => set({
     user: data.user,
     habits: data.habits || [],
@@ -28,7 +28,7 @@ export const useAuraStore = create((set, get) => ({
 
   setError: (msg) => set({ error: msg, isLoading: false }),
 
-  // ── Food Logs ──────────────────────────────────────────────────────────────
+  // --- Food Logs --------------------------------------------------------------
   addFoodLog: (log) => set((state) => ({
     foodLogs: [log, ...state.foodLogs],
   })),
@@ -37,7 +37,7 @@ export const useAuraStore = create((set, get) => ({
     foodLogs: state.foodLogs.filter(f => f.id !== logId),
   })),
 
-  // ── Activity Logs ──────────────────────────────────────────────────────────
+  // --- Activity Logs ----------------------------------------------------------
   addActivityLog: (log) => set((state) => ({
     activityLogs: [log, ...state.activityLogs],
   })),
@@ -46,7 +46,7 @@ export const useAuraStore = create((set, get) => ({
     activityLogs: state.activityLogs.filter(a => a.id !== logId),
   })),
 
-  // ── Habits ─────────────────────────────────────────────────────────────────
+  // --- Habits -----------------------------------------------------------------
   addHabit: (habit) => set((state) => ({
     habits: [...state.habits, { ...habit, logs: habit.logs || [] }],
   })),
@@ -84,13 +84,13 @@ export const useAuraStore = create((set, get) => ({
     };
   }),
 
-  // ── Daily Score ────────────────────────────────────────────────────────────
+  // --- Daily Score ------------------------------------------------------------
   setDailyScore: (scoreData) => set({ dailyScore: scoreData }),
 
-  // ── User ───────────────────────────────────────────────────────────────────
+  // --- User -------------------------------------------------------------------
   setUser: (userData) => set({ user: userData }),
 
-  // ── Computed helpers (getters) ─────────────────────────────────────────────
+  // --- Computed helpers (getters) ---------------------------------------------
   getTotalCaloriesIn: () => {
     const { foodLogs } = get();
     return foodLogs.reduce((sum, f) => sum + (f.calories || 0), 0);

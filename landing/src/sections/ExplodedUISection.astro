@@ -1,0 +1,49 @@
+---
+const layers = [
+  { label: 'Neural Score', color: '#00f3ff' },
+  { label: 'Food Log', color: '#8b5cf6' },
+  { label: 'Habit Engine', color: '#a78bfa' },
+  { label: 'Macro Analytics', color: '#06b6d4' },
+  { label: 'AI Coach', color: '#f59e0b' },
+]
+---
+
+<section id="exploded-ui" class="relative z-10 py-32 px-6 overflow-hidden">
+  <div class="relative max-w-4xl mx-auto text-center">
+    <div class="badge mb-6 fade-up">Architecture</div>
+    <h2 class="text-4xl sm:text-5xl md:text-6xl font-heading italic mb-6 fade-up">
+      One dashboard.<br/>
+      <span class="text-gradient-violet">Five layers deep.</span>
+    </h2>
+    <p class="text-white/40 text-lg max-w-xl mx-auto mb-16 fade-up">
+      Under the surface, Synapze fuses five intelligent modules into a seamless Human OS.
+    </p>
+
+    <!-- Exploded UI stack -->
+    <div id="exploded-stack" class="relative w-full max-w-lg mx-auto" style="height: 400px; perspective: 1200px;">
+      {layers.map((layer, i) => (
+        <div
+          class="exploded-card absolute inset-x-0 mx-auto w-full text-left"
+          data-layer={i}
+          style={`top: ${i * 12}px; z-index: ${layers.length - i}; border-left: 3px solid ${layer.color};`}
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-3 h-3 rounded-full" style={`background: ${layer.color};`}></div>
+              <span class="text-sm font-bold text-white">{layer.label}</span>
+            </div>
+            <span class="text-xs text-white/20 font-mono">Layer {String(i + 1).padStart(2, '0')}</span>
+          </div>
+          <div class="mt-3 h-2 rounded-full bg-white/[0.04] overflow-hidden">
+            <div class="h-full rounded-full" style={`width: ${85 - i * 8}%; background: ${layer.color}; opacity: 0.6;`}></div>
+          </div>
+        </div>
+      ))}
+
+      <!-- Center glow -->
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full opacity-0" id="exploded-glow"
+        style="background: radial-gradient(circle, rgba(0,243,255,0.15), transparent 70%);" aria-hidden="true">
+      </div>
+    </div>
+  </div>
+</section>

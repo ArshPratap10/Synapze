@@ -1,0 +1,67 @@
+---
+const testimonials = [
+  {
+    name: 'Priya S.',
+    role: 'Marathon Runner',
+    text: 'The Neural Score completely changed how I approach recovery. I optimised my nutrition windows and shaved 8 minutes off my personal best.',
+    score: 94,
+  },
+  {
+    name: 'Arjun M.',
+    role: 'Software Engineer',
+    text: 'I log my meals in literally 2 seconds with the camera. The sugar intelligence feature opened my eyes — I was consuming 3x the added sugar I thought.',
+    score: 87,
+  },
+  {
+    name: 'Zara K.',
+    role: 'Fitness Coach',
+    text: 'I recommend Synapze to every client now. The AI coaching advice is genuinely personalised, not the generic tips you get from other apps.',
+    score: 91,
+  },
+]
+---
+
+<section id="community" class="relative z-10 py-32 px-6">
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+    <div class="bg-orb w-[600px] h-[600px] bottom-0 left-1/4" style="background: radial-gradient(circle, rgba(139,92,246,0.04) 0%, transparent 70%);"></div>
+  </div>
+
+  <div class="relative max-w-5xl mx-auto">
+    <div class="text-center mb-16">
+      <div class="badge mb-6 fade-up">Community</div>
+      <h2 class="text-4xl sm:text-5xl md:text-6xl font-heading italic mb-4 fade-up">
+        Loved by<br/>
+        <span class="text-gradient-violet">real humans.</span>
+      </h2>
+      <p class="text-white/30 text-lg fade-up">People who stopped guessing and started knowing.</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-5">
+      {testimonials.map((t) => (
+        <div class="testimonial-card fade-up">
+          <!-- Stars -->
+          <div class="flex gap-1 mb-4">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+
+          <p class="text-white/50 text-sm leading-relaxed mb-6 flex-1">"{t.text}"</p>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-white font-semibold text-sm">{t.name}</p>
+              <p class="text-white/25 text-xs">{t.role}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-lg font-black text-gradient-cyan">{t.score}</p>
+              <p class="text-[8px] text-white/20 font-bold tracking-widest uppercase">Score</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

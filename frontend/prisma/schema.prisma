@@ -3,30 +3,49 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
 }
 
+
+
 model User {
-  id        String   @id @default(uuid())
-  email     String?  @unique
-  name      String
-  goal      String   // e.g., "Be Fit", "Lose Weight"
-  height    Float?
-  weight    Float?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(uuid())
+  email          String?  @unique
+  name           String
+  goal           String   @default("Maintenance")
+  height         Float?
+  weight         Float?
+  age            Int?
+  gender         String?  // "male" | "female"
+  activityLevel  String   @default("moderate")
+  tdee           Int?
+  targetCalories Int?
+  targetProtein  Int?
+  targetCarbs    Int?
+  targetFat      Int?
+  isPro          Boolean  @default(false)
+  proExpiresAt   DateTime?
+  onboardingDone Boolean  @default(false)
+  dietType       String?
+  foodPrefs      String?  @db.Text
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   habits        Habit[]
   foodLogs      FoodLog[]
   activityLogs  ActivityLog[]
   dailyScores   DailyScore[]
+  waterLogs     WaterLog[]
+  journalEntries JournalEntry[]
+  weightLogs     WeightLog[]
 }
 
 model Habit {
   id            String     @id @default(uuid())
   userId        String
   name          String
-  frequency     String     // e.g., "daily"
+  frequency     String     @default("daily")
   currentStreak Int        @default(0)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -49,18 +68,26 @@ model HabitLog {
 }
 
 model FoodLog {
-  id           String   @id @default(uuid())
-  userId       String
-  description  String   // AI-cleaned meal name
-  calories     Int
-  protein      Float
-  carbs        Float
-  fat          Float
-  addedSugar   Float    @default(0)
-  naturalSugar Float    @default(0)
-  loggedAt     DateTime @default(now())
+  id               String   @id @default(uuid())
+  userId           String
+  description      String
+  calories         Int
+  protein          Float
+  carbs            Float
+  fat              Float
+  fiber            Float    @default(0)
+  sodium           Float    @default(0)
+  addedSugar       Float    @default(0)
+  naturalSugar     Float    @default(0)
+  loggedAt         DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generationSource String   @default("manual")
+  confidenceScore  Float?
+  modelId          String?
+  promptHash       String?
+  reviewStatus     String?
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, loggedAt])
 }
@@ -68,8 +95,8 @@ model FoodLog {
 model ActivityLog {
   id             String   @id @default(uuid())
   userId         String
-  name           String   // AI-cleaned activity name
-  duration       Int?     // duration in minutes
+  name           String
+  duration       Int?
   caloriesBurned Int
   loggedAt       DateTime @default(now())
 
@@ -82,11 +109,52 @@ model DailyScore {
   id        String   @id @default(uuid())
   userId    String
   date      DateTime @db.Date
-  score     Int      // 0-100
-  insight   String   // AI Coach generated message
+  score     Int
+  insight   String
+  bodyPct   Int      @default(33)
+  mindPct   Int      @default(33)
+  energyPct Int      @default(34)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
 }
+
+model WaterLog {
+  id        String   @id @default(uuid())
+  userId    String
+  amountMl  Int
+  loggedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+}
+
+model JournalEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  content   String   @db.Text
+  mood      String?
+  audioUrl  String?
+  entryDate DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, entryDate])
+}
+
+model WeightLog {
+  id        String   @id @default(uuid())
+  userId    String
+  weight    Float
+  loggedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+}
+

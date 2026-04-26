@@ -1,7 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useSignIn, useSignUp, useAuth } from '@clerk/nextjs'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mail, Lock, User, Eye, EyeOff, Dumbbell, TrendingDown, TrendingUp, Heart, ArrowRight } from 'lucide-react'
+import { Mail, Lock, User, Eye, EyeOff, Dumbbell, TrendingDown, TrendingUp, Heart, ArrowRight, Sparkles } from 'lucide-react'
+import { useTheme } from '@/lib/ThemeContext'
 
 const QUOTES = [
   "The body achieves what the mind believes.",
@@ -11,10 +14,10 @@ const QUOTES = [
 ]
 
 const GOALS = [
-  { id: 'fit', label: 'Get Fit', desc: 'Build overall fitness', icon: Heart, color: '#00f3ff' },
-  { id: 'lose', label: 'Lose Weight', desc: 'Healthy fat loss', icon: TrendingDown, color: '#22c55e' },
-  { id: 'gain', label: 'Gain Weight', desc: 'Clean bulk up', icon: TrendingUp, color: '#f97316' },
-  { id: 'muscle', label: 'Gain Muscle', desc: 'Build lean mass', icon: Dumbbell, color: '#bf00ff' },
+  { id: 'fit', label: 'Get Fit', desc: 'Build overall fitness', icon: Heart, color: '#7c6bc4' },
+  { id: 'lose', label: 'Lose Weight', desc: 'Healthy fat loss', icon: TrendingDown, color: '#16a34a' },
+  { id: 'gain', label: 'Gain Weight', desc: 'Clean bulk up', icon: TrendingUp, color: '#d97706' },
+  { id: 'muscle', label: 'Gain Muscle', desc: 'Build lean mass', icon: Dumbbell, color: '#a78bfa' },
 ]
 
 function GoogleIcon() {
@@ -28,12 +31,104 @@ function GoogleIcon() {
   )
 }
 
+function InputField({ icon: Icon, placeholder, type, value, onChange }) {
+  return (
+    <div className="relative">
+      <Icon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        className="input-field pl-10"
+      />
+    </div>
+  )
+}
+
 export default function AuthPage() {
   const [mode, setMode] = useState('signin')
   const [showPass, setShowPass] = useState(false)
   const [showGoals, setShowGoals] = useState(false)
   const [selectedGoal, setSelectedGoal] = useState(null)
   const [quoteIdx, setQuoteIdx] = useState(0)
+  
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+  
+  const router = useRouter()
+  const { dark } = useTheme()
+  const { isSignedIn, isLoaded: authLoaded } = useAuth()
+  const { signIn, isLoaded: signInLoaded, setActive: setSignInActive } = useSignIn()
+  const { signUp, isLoaded: signUpLoaded, setActive: setSignUpActive } = useSignUp()
+
+  useEffect(() => {
+    if (authLoaded && isSignedIn) {
+      router.push('/dashboard')
+    }
+  }, [authLoaded, isSignedIn, router])
+
+  const handleEmailAuth = async () => {
+    if (mode === 'signin') {
+      if (!signInLoaded) return;
+      try {
+        setLoading(true);
+        const result = await signIn.create({ identifier: email, password });
+        if (result.status === 'complete') {
+          await setSignInActive({ session: result.createdSessionId });
+          router.push('/dashboard');
+        } else {
+          console.log(result);
+        }
+      } catch (err) {
+        alert(err.errors?.[0]?.longMessage || 'Sign in failed');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      if (!email || !password) return alert("Please enter email and password");
+      setShowGoals(true);
+    }
+  }
+
+  const handleGoalsSubmit = async () => {
+    if (!signUpLoaded) return;
+    try {
+      setLoading(true);
+      const result = await signUp.create({ emailAddress: email, password });
+      if (result.status === 'complete') {
+         await setSignUpActive({ session: result.createdSessionId });
+         router.push('/onboarding');
+      } else if (result.status === 'missing_requirements') {
+         alert('Please check your email for a verification code, or enable password-only signups in Clerk.');
+      }
+    } catch (err) {
+      alert(err.errors?.[0]?.longMessage || 'Sign up failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleGoogleOAuth = () => {
+    if (!signInLoaded || !signUpLoaded) return;
+    if (isSignedIn) { router.push('/dashboard'); return; }
+    
+    if (mode === 'signin') {
+      signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard'
+      });
+    } else {
+      signUp.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/onboarding'
+      });
+    }
+  }
 
   useEffect(() => {
     const t = setInterval(() => setQuoteIdx(i => (i + 1) % QUOTES.length), 5000)
@@ -41,21 +136,32 @@ export default function AuthPage() {
   }, [])
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-[#0a0a0f]">
+    <div className="min-h-screen flex flex-col lg:flex-row" style={{ background: 'var(--bg-primary)' }}>
+
       {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-[40%] flex-col items-center justify-center relative overflow-hidden p-12">
-        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-[120px]" />
+      <div className="hidden lg:flex lg:w-[42%] flex-col items-center justify-center relative overflow-hidden p-12">
+        <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${dark ? 'rgba(124,107,196,0.08)' : 'rgba(124,107,196,0.06)'}, transparent, ${dark ? 'rgba(167,139,250,0.06)' : 'rgba(167,139,250,0.04)'})` }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px]"
+          style={{ background: dark ? 'rgba(124,107,196,0.06)' : 'rgba(124,107,196,0.08)' }} />
+        
         <motion.div className="relative z-10 text-center" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-4xl font-black gradient-text mb-3">Project Aura</h1>
-          <p className="text-zinc-500 text-sm mb-12">Your Neural Habit Suite</p>
+          {/* Logo */}
+          <div className="w-16 h-16 rounded-2xl mx-auto mb-6 flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, #7c6bc4, #a78bfa)', boxShadow: '0 8px 40px rgba(124,107,196,0.3)' }}>
+            <Sparkles size={28} className="text-white" />
+          </div>
+
+          <h1 className="text-4xl font-black gradient-text mb-2">Synapze</h1>
+          <p className="text-sm mb-12" style={{ color: 'var(--text-muted)' }}>Your Neural Habit Suite</p>
+          
           <AnimatePresence mode="wait">
             <motion.p
               key={quoteIdx}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="text-zinc-400 text-sm italic max-w-xs mx-auto leading-relaxed"
+              className="text-sm italic max-w-xs mx-auto leading-relaxed"
+              style={{ color: 'var(--text-secondary)' }}
             >
               &ldquo;{QUOTES[quoteIdx]}&rdquo;
             </motion.p>
@@ -71,17 +177,29 @@ export default function AuthPage() {
           className="glass-card w-full max-w-md p-8"
         >
           {/* Mobile logo */}
-          <h2 className="lg:hidden text-2xl font-black gradient-text text-center mb-6">Project Aura</h2>
+          <div className="lg:hidden text-center mb-6">
+            <div className="w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #7c6bc4, #a78bfa)' }}>
+              <Sparkles size={20} className="text-white" />
+            </div>
+            <h2 className="text-2xl font-black gradient-text">Synapze</h2>
+          </div>
 
           {/* Tabs */}
-          <div className="flex mb-6 bg-white/5 rounded-lg p-1">
+          <div className="flex mb-6 rounded-xl p-1" style={{ background: 'var(--accent-bg)' }}>
             {['signin', 'signup'].map(m => (
               <button
                 key={m}
                 onClick={() => { setMode(m); setShowGoals(false) }}
-                className={`flex-1 py-2.5 rounded-md text-xs font-bold uppercase tracking-wider border-none cursor-pointer transition-all ${
-                  mode === m ? 'bg-white/10 text-cyan-400' : 'bg-transparent text-zinc-500'
+                className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border-none cursor-pointer transition-all ${
+                  mode === m
+                    ? 'text-white shadow-sm'
+                    : ''
                 }`}
+                style={mode === m
+                  ? { background: 'linear-gradient(135deg, #7c6bc4, #a78bfa)' }
+                  : { color: 'var(--text-muted)', background: 'transparent' }
+                }
               >
                 {m === 'signin' ? 'Sign In' : 'Sign Up'}
               </button>
@@ -93,44 +211,43 @@ export default function AuthPage() {
               <motion.div key={mode} initial={{ opacity: 0, x: mode === 'signin' ? -20 : 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
                 <div className="space-y-3">
                   {mode === 'signup' && (
-                    <InputField icon={User} placeholder="Full Name" type="text" />
+                    <InputField icon={User} placeholder="Full Name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
                   )}
-                  <InputField icon={Mail} placeholder="Email" type="email" />
+                  <InputField icon={Mail} placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
                   <div className="relative">
-                    <InputField icon={Lock} placeholder="Password" type={showPass ? 'text' : 'password'} />
-                    <button onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-zinc-600">
+                    <InputField icon={Lock} placeholder="Password" type={showPass ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} />
+                    <button onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer" style={{ color: 'var(--text-muted)' }}>
                       {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  {mode === 'signup' && (
-                    <InputField icon={Lock} placeholder="Confirm Password" type="password" />
-                  )}
 
                   {mode === 'signin' && (
-                    <p className="text-right text-[11px] text-cyan-400/60 cursor-pointer hover:text-cyan-400 transition-colors">Forgot Password?</p>
+                    <p className="text-right text-[11px] cursor-pointer transition-colors" style={{ color: 'var(--accent)' }}>Forgot Password?</p>
                   )}
 
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => mode === 'signup' ? setShowGoals(true) : null}
-                    className="w-full py-3 rounded-xl btn-primary text-sm font-bold tracking-wider flex items-center justify-center gap-2"
+                    onClick={handleEmailAuth}
+                    disabled={loading}
+                    className="w-full py-3.5 rounded-xl btn-primary text-sm font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    {mode === 'signin' ? 'Sign In' : 'Continue'} <ArrowRight size={16} />
+                    {loading ? 'Processing...' : (mode === 'signin' ? 'Sign In' : 'Continue')} <ArrowRight size={16} />
                   </motion.button>
                 </div>
 
                 {/* Divider */}
                 <div className="flex items-center gap-3 my-5">
-                  <div className="flex-1 h-px bg-white/10" />
-                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider">or</span>
-                  <div className="flex-1 h-px bg-white/10" />
+                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                  <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>or</span>
+                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
                 </div>
 
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-zinc-300 font-medium flex items-center justify-center gap-3 cursor-pointer hover:bg-white/10 transition-colors"
+                  onClick={handleGoogleOAuth}
+                  className="w-full py-3.5 rounded-xl btn-secondary text-sm font-medium flex items-center justify-center gap-3 cursor-pointer"
                 >
                   <GoogleIcon />
                   Continue with Google
@@ -138,7 +255,7 @@ export default function AuthPage() {
               </motion.div>
             ) : (
               <motion.div key="goals" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-                <p className="text-center text-sm text-zinc-400 mb-5">What&apos;s your primary goal?</p>
+                <p className="text-center text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>What&apos;s your primary goal?</p>
                 <div className="grid grid-cols-2 gap-3">
                   {GOALS.map(g => (
                     <motion.button
@@ -146,43 +263,29 @@ export default function AuthPage() {
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setSelectedGoal(g.id)}
-                      className={`glass-card p-4 flex flex-col items-center gap-2 cursor-pointer border-none transition-all ${
-                        selectedGoal === g.id ? '!border-cyan-400/50 shadow-glow-cyan' : ''
-                      }`}
-                      style={selectedGoal === g.id ? { borderColor: g.color, boxShadow: `0 0 20px ${g.color}30` } : {}}
+                      className="glass-card p-4 flex flex-col items-center gap-2 cursor-pointer border-none transition-all"
+                      style={selectedGoal === g.id ? { borderColor: g.color, boxShadow: `0 0 24px ${g.color}25` } : {}}
                     >
                       <g.icon size={24} style={{ color: g.color }} />
-                      <span className="text-xs font-bold text-zinc-200">{g.label}</span>
-                      <span className="text-[10px] text-zinc-500">{g.desc}</span>
+                      <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{g.label}</span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{g.desc}</span>
                     </motion.button>
                   ))}
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full mt-5 py-3 rounded-xl btn-primary text-sm font-bold flex items-center justify-center gap-2"
-                  style={{ opacity: selectedGoal ? 1 : 0.4 }}
+                  onClick={handleGoalsSubmit}
+                  disabled={!selectedGoal || loading}
+                  className="w-full mt-5 py-3.5 rounded-xl btn-primary text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
                 >
-                  Get Started <ArrowRight size={16} />
+                  {loading ? 'Creating...' : 'Get Started'} <ArrowRight size={16} />
                 </motion.button>
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
       </div>
-    </div>
-  )
-}
-
-function InputField({ icon: Icon, placeholder, type }) {
-  return (
-    <div className="relative">
-      <Icon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
-      <input
-        type={type}
-        placeholder={placeholder}
-        className="w-full py-3 pl-10 pr-4 rounded-xl bg-white/5 border border-white/10 text-sm text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-cyan-400/30 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-      />
     </div>
   )
 }

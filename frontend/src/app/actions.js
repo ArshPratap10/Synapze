@@ -1,81 +1,153 @@
 'use server'
 
 import prisma from '@/lib/prisma';
-import { DUMMY_USER_ID } from '@/lib/constants';
+import { auth } from '@clerk/nextjs/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+async function getUserId() {
+  const { userId } = await auth();
+  if (!userId) throw new Error('Unauthorized: No active session');
+  return userId;
+}
 
-// ─── Resilient AI with full model cascade + offline fallback ─────────────────
-async function resilientAI(prompt) {
-  const models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash-exp",
-  ];
-  for (const m of models) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: m,
-        generationConfig: { responseMimeType: "application/json" },
-      });
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-      let text = result.response.text().trim();
-      // Strip markdown fences if present
-      text = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-      return JSON.parse(text);
-    } catch (e) {
-      console.warn(`[AI] Model ${m} failed:`, e.message);
+const GEMINI_KEYS = [
+  process.env.GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY_2,
+  process.env.GEMINI_API_KEY_3,
+  process.env.DEMOKEY
+].filter(Boolean);
+
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-3.1-flash-lite-preview"
+];
+
+// Simple circuit breaker state: { keyIndex: timestamp_of_next_retry }
+const keyCircuitBreakers = {};
+
+// --- Internal Helper for Gemini Key Rotation ---------------------------------
+async function callGemini(prompt, isVision = false, base64Image = null) {
+  const now = Date.now();
+
+  for (let i = 0; i < GEMINI_KEYS.length; i++) {
+    // Skip if key is currently blocked by circuit breaker
+    if (keyCircuitBreakers[i] && now < keyCircuitBreakers[i]) {
+      continue;
+    }
+
+    for (const modelId of GEMINI_MODELS) {
+      try {
+        const genAI = new GoogleGenerativeAI(GEMINI_KEYS[i]);
+        const model = genAI.getGenerativeModel({
+          model: modelId,
+          tools: isVision ? [] : [{ googleSearch: {} }],
+        });
+
+        let result;
+        if (isVision && base64Image) {
+          result = await model.generateContent([
+            prompt,
+            { inlineData: { data: base64Image, mimeType: "image/jpeg" } }
+          ]);
+        } else {
+          result = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+          });
+        }
+
+        const text = result.response.text();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error("No JSON found in response");
+        
+        // Reset circuit breaker on success
+        delete keyCircuitBreakers[i];
+        
+        console.log(`[AI] ${modelId} succeeded (Key Index: ${i}).`);
+        return JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        // If it's a 429 (Rate Limit), block this key for 5 minutes to reduce noise
+        if (e.message.includes("429") || e.message.includes("quota")) {
+          console.warn(`[AI] Key Index ${i} hit rate limit. Blocking for 5 mins.`);
+          keyCircuitBreakers[i] = now + 5 * 60 * 1000;
+          break; // Stop trying models for this key, move to next key
+        }
+        
+        console.warn(`[AI] ${modelId} with Key Index ${i} failed:`, e.message);
+      }
     }
   }
-
-  // Groq Fallback
-  console.log("[AI] All Gemini models failed. Attempting Groq fallback...");
-  try {
-    const groqKey = process.env.GROQ_API_KEY;
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${groqKey}`
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          {
-            role: "system",
-            content: `You are an elite personal health coach. Respond ONLY with valid JSON (no markdown blocks, no thinking blocks, just raw JSON).
-The "insight" must be a detailed, coaching-style review (3-4 sentences). Act as an elite personal health coach. Acknowledge what they did well based on their input, gently correct any missteps, give an actionable step for what to do next, and explicitly state their remaining daily calorie quota and which specific habits they still need to complete.`
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        temperature: 0.1
-      })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      let text = data.choices?.[0]?.message?.content || "";
-      text = text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-      console.log("[AI] Groq fallback succeeded.");
-      return JSON.parse(text);
-    } else {
-      const errText = await response.text();
-      console.warn(`[AI] Groq fallback failed with status ${response.status}:`, errText);
-    }
-  } catch (e) {
-    console.warn(`[AI] Groq fallback network error:`, e.message);
-  }
-
   return null;
 }
 
-// ─── Safely parse int/float from AI, clamp to reasonable range ───────────────
+// --- AI Logic: Strictly Gemini 2.5 Flash (High Usage) -------------------------
+async function resilientAI(prompt) {
+  try {
+    const data = await callGemini(prompt);
+    if (data) return data;
+  } catch (e) {
+    console.warn("[AI] All Gemini keys failed, attempting fallback...");
+    
+    // Minimal Groq Fallback (Optional, but safe to keep)
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content || "{}";
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
+        }
+        console.warn('[AI] Groq returned non-OK status:', res.status);
+      } catch (err) {
+        console.warn('[AI] Groq fallback failed:', err.message);
+      }
+    }
+  }
+  return null;
+}
+
+// --- Vision AI (Specifically for Images) -------------------------------------
+export async function logFoodWithImage(base64Image) {
+  try {
+    const prompt = `You are a world-class nutritional scientist. Identify the food in this image with extreme precision. 
+If you see specific quantities or types (e.g., full-fat milk vs skim), adjust macros accordingly.
+Full-fat milk is ~150kcal and 8g fat per cup (240ml). Protein powder is ~120kcal and 25g protein per scoop.
+
+Return ONLY JSON: { "description": "...", "calories": 0, "protein": 0, "carbs": 0, "fat": 0, "naturalSugar": 0, "addedSugar": 0 }`;
+    
+    const data = await callGemini(prompt, true, base64Image);
+    if (!data) throw new Error("No data returned from Vision AI");
+    
+    const newLog = await prisma.foodLog.create({
+      data: {
+        userId: await getUserId(),
+        description: data.description,
+        calories: safeInt(data.calories, 400),
+        protein: safeFloat(data.protein, 15),
+        carbs: safeFloat(data.carbs, 45),
+        fat: safeFloat(data.fat, 18),
+        naturalSugar: safeFloat(data.naturalSugar, 8),
+        addedSugar: safeFloat(data.addedSugar, 3),
+      }
+    });
+
+    return { success: true, data: JSON.parse(JSON.stringify(newLog)) };
+  } catch (error) {
+    console.error("[Vision AI] Error:", error);
+    return { success: false, error: "Failed to analyze image" };
+  }
+}
+
+// --- Safely parse int/float from AI, clamp to reasonable range --------------
 function safeInt(v, fallback = 0) {
   const n = Math.round(Number(v));
   return isNaN(n) ? fallback : Math.max(0, n);
@@ -85,7 +157,7 @@ function safeFloat(v, fallback = 0) {
   return isNaN(n) ? fallback : Math.max(0, n);
 }
 
-// ─── getDashboardData ─────────────────────────────────────────────────────────
+// --- getDashboardData --------------------------------------------------------
 export async function getDashboardData() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -93,31 +165,47 @@ export async function getDashboardData() {
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: DUMMY_USER_ID } });
+    const userId = await getUserId();
 
-    const habits = await prisma.habit.findMany({
-      where: { userId: DUMMY_USER_ID },
-      orderBy: { createdAt: 'asc' },
-      include: {
-        logs: {
-          where: { completedDate: { gte: today, lt: tomorrow } },
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    
+    // Auto-create user if missing (Clerk synced but DB not)
+    if (!user) {
+      console.log(`[getDashboardData] User ${userId} not found, creating...`);
+      user = await prisma.user.create({
+        data: {
+          id: userId,
+          name: 'New User', // Default name, can be updated in profile
+          goal: 'Maintenance',
+          targetCalories: 2000,
+          targetProtein: 120,
+          targetCarbs: 200,
+          targetFat: 60,
+          onboardingDone: false
+        }
+      });
+    }
+
+    const [habits, foodLogs, activityLogs, dailyScore] = await Promise.all([
+      prisma.habit.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          logs: { where: { completedDate: { gte: today, lt: tomorrow } } },
         },
-      },
-    });
-
-    const foodLogs = await prisma.foodLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      orderBy: { loggedAt: 'desc' },
-    });
-
-    const activityLogs = await prisma.activityLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      orderBy: { loggedAt: 'desc' },
-    });
-
-    const dailyScore = await prisma.dailyScore.findFirst({
-      where: { userId: DUMMY_USER_ID, date: { gte: today, lt: tomorrow } },
-    });
+      }),
+      prisma.foodLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        orderBy: { loggedAt: 'desc' },
+      }),
+      prisma.activityLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        orderBy: { loggedAt: 'desc' },
+      }),
+      prisma.dailyScore.findFirst({
+        where: { userId, date: { gte: today, lt: tomorrow } },
+      }),
+    ]);
 
     return {
       success: true,
@@ -129,7 +217,7 @@ export async function getDashboardData() {
   }
 }
 
-// ─── clarifyFoodQuery ─────────────────────────────────────────────────────────
+// --- clarifyFoodQuery --------------------------------------------------------
 export async function clarifyFoodQuery(chatHistory) {
   try {
     const conversation = chatHistory.map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}`).join('\n');
@@ -159,7 +247,7 @@ Return ONLY this JSON if clarification is truly needed:
   }
 }
 
-// ─── clarifyActivityQuery ─────────────────────────────────────────────────────
+// --- clarifyActivityQuery ----------------------------------------------------
 export async function clarifyActivityQuery(chatHistory) {
   try {
     const conversation = chatHistory.map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}`).join('\n');
@@ -188,7 +276,7 @@ Return ONLY this JSON if clarification is truly needed:
   }
 }
 
-// ─── clarifyDayQuery ──────────────────────────────────────────────────────────
+// --- clarifyDayQuery ---------------------------------------------------------
 export async function clarifyDayQuery(chatHistory) {
   try {
     const conversation = chatHistory.map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}`).join('\n');
@@ -217,67 +305,48 @@ Return ONLY this JSON if clarification is truly needed:
   }
 }
 
-// ─── logFoodWithAI ────────────────────────────────────────────────────────────
-export async function logFoodWithAI(description) {
+// --- logFoodWithAI: Preview logic (Doesn't save yet) -------------------------
+export async function logFoodWithAI(description, dateStr = null) {
   try {
-    let data = null;
+    const today = dateStr ? new Date(dateStr) : new Date();
+    const prompt = `You are a nutrition expert. User says: "${description}". Date: ${today.toDateString()}. 
+Analyze macros. Return JSON: { "description": "...", "calories": 0, "protein": 0, "carbs": 0, "fat": 0, "naturalSugar": 0, "addedSugar": 0 }`;
+    
+    let data = await resilientAI(prompt);
 
-    // 1. Try Nutrition Tracker API
-    try {
-      const rapidApiKey = process.env.RAPIDAPI_KEY;
-      const response = await fetch("https://nutrition-tracker-api.p.rapidapi.com/v1/calculate/natural", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-rapidapi-key": rapidApiKey,
-          "x-rapidapi-host": "nutrition-tracker-api.p.rapidapi.com"
-        },
-        body: JSON.stringify({ text: description })
-      });
-
-      if (response.ok) {
-        const rawData = await response.json();
-        if (rawData.success && rawData.data && rawData.data.totalNutrients) {
-          const nutrients = rawData.data.totalNutrients;
-          data = {
-            description: rawData.data.query || description,
-            calories: nutrients.Energy ? nutrients.Energy.value : 0,
-            protein: nutrients.Protein ? nutrients.Protein.value : 0,
-            carbs: nutrients.Carbohydrates ? nutrients.Carbohydrates.value : 0,
-            fat: nutrients.Fat ? nutrients.Fat.value : 0,
-            naturalSugar: nutrients["Total Sugars"] ? nutrients["Total Sugars"].value : 0,
-            addedSugar: 0
-          };
-          console.log("[Nutrition API] Successfully parsed food:", data);
-        } else {
-          throw new Error("Invalid response format from Nutrition Tracker API");
-        }
-      } else {
-        throw new Error(`API returned ${response.status}`);
-      }
-    } catch (apiError) {
-      console.warn("[Nutrition API] Failed, falling back to Groq/Gemini:", apiError.message);
-    }
-
-    // 2. Fallback to Groq/Gemini if API failed
+    // 2. If Gemini/Groq fail, Try Nutrition Tracker API (Fallback)
     if (!data) {
-      const prompt = `You are an expert nutritionist. Analyze the following meal description and provide accurate nutritional estimates. 
-If multiple items are mentioned, provide the total for the entire meal.
+      try {
+        const rapidApiKey = process.env.RAPIDAPI_KEY;
+        const response = await fetch("https://nutrition-tracker-api.p.rapidapi.com/v1/calculate/natural", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-rapidapi-key": rapidApiKey,
+            "x-rapidapi-host": "nutrition-tracker-api.p.rapidapi.com"
+          },
+          body: JSON.stringify({ text: description })
+        });
 
-Food Description: "${description}"
-
-Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
-{
-  "description": "Clean, descriptive meal name",
-  "calories": 0,
-  "protein": 0.0,
-  "carbs": 0.0,
-  "fat": 0.0,
-  "naturalSugar": 0.0,
-  "addedSugar": 0.0
-}`;
-
-      data = await resilientAI(prompt);
+        if (response.ok) {
+          const rawData = await response.json();
+          if (rawData.success && rawData.data && rawData.data.totalNutrients) {
+            const nutrients = rawData.data.totalNutrients;
+            data = {
+              description: rawData.data.query || description,
+              calories: nutrients.Energy ? nutrients.Energy.value : 0,
+              protein: nutrients.Protein ? nutrients.Protein.value : 0,
+              carbs: nutrients.Carbohydrates ? nutrients.Carbohydrates.value : 0,
+              fat: nutrients.Fat ? nutrients.Fat.value : 0,
+              naturalSugar: nutrients["Total Sugars"] ? nutrients["Total Sugars"].value : 0,
+              addedSugar: 0
+            };
+            console.log("[Nutrition API Fallback] Successfully parsed food:", data);
+          }
+        }
+      } catch (apiError) {
+        console.warn("[Nutrition API Fallback] Failed:", apiError.message);
+      }
     }
 
     if (!data) {
@@ -292,43 +361,94 @@ Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
       };
     }
 
-    const newLog = await prisma.foodLog.create({
-      data: {
-        userId: DUMMY_USER_ID,
-        description: String(data.description || description),
-        calories: safeInt(data.calories, 400),
-        protein: safeFloat(data.protein, 15),
-        carbs: safeFloat(data.carbs, 45),
-        fat: safeFloat(data.fat, 18),
-        naturalSugar: safeFloat(data.naturalSugar, 8),
-        addedSugar: safeFloat(data.addedSugar, 3),
-      },
-    });
+    data.confidenceScore = 0.85;
+    data.generationSource = 'ai';
+    data.modelId = 'gemini-2.5-flash';
+    data.promptHash = description.slice(0, 20);
+    data.fiber = data.fiber || 0;
+    data.sodium = data.sodium || 0;
 
-    return { success: true, data: JSON.parse(JSON.stringify(newLog)) };
+    const preview = data;
+    return { success: true, preview };
   } catch (error) {
     console.error("[logFoodWithAI] Error:", error);
     return { success: false, error: error.message || "Failed to log food" };
   }
 }
 
-// ─── logActivityWithAI ────────────────────────────────────────────────────────
-export async function logActivityWithAI(description) {
+// --- confirmFoodLog: Save the previewed food ---------------------------------
+export async function confirmFoodLog(preview, dateStr = null) {
   try {
-    const user = await prisma.user.findUnique({ where: { id: DUMMY_USER_ID } });
+    const userId = await getUserId();
+    const loggedAt = dateStr ? new Date(dateStr) : new Date();
+    
+    const newLog = await prisma.foodLog.create({
+      data: {
+        userId,
+        description: preview.description || "Food",
+        calories: safeInt(preview.calories, 400),
+        protein: safeFloat(preview.protein, 15),
+        carbs: safeFloat(preview.carbs, 45),
+        fat: safeFloat(preview.fat, 18),
+        naturalSugar: safeFloat(preview.naturalSugar, 8),
+        addedSugar: safeFloat(preview.addedSugar, 3),
+        loggedAt,
+      },
+    });
+
+    await regenerateDailyScore(dateStr);
+    return { success: true, data: JSON.parse(JSON.stringify(newLog)) };
+  } catch (error) {
+    console.error("[confirmFoodLog] Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function saveOnboardingProfile(form) {
+  try {
+    const user = await prisma.user.update({
+      where: { id: await getUserId() },
+      data: {
+        weight: parseFloat(form.weight) || 70,
+        height: parseFloat(form.height) || 170,
+        age: parseInt(form.age) || 25,
+        gender: form.gender || 'male',
+        activityLevel: form.activityLevel || 'moderate',
+        goal: form.goal || 'Maintenance',
+        dietType: form.dietType || 'No Preference',
+        foodPrefs: JSON.stringify(form.foodPrefs || {}),
+        onboardingDone: true,
+      }
+    });
+    return { success: true, data: JSON.parse(JSON.stringify(user)) };
+  } catch (error) {
+    console.error("[saveOnboardingProfile] Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function suggestFoodPreferences({ goal, dietType }) {
+  try {
+    const prompt = `Suggest 5-10 favorite foods for Breakfast, Lunch, Snacks, Dinner, and General based on a ${dietType} diet and a goal of ${goal}. Return a JSON object with keys: Breakfast, Lunch, Snacks, Dinner, General mapped to arrays of strings. Return ONLY JSON.`;
+    const data = await resilientAI(prompt);
+    return { success: true, data };
+  } catch (error) {
+    console.error("[suggestFoodPreferences] Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// --- logActivityWithAI -------------------------------------------------------
+export async function logActivityWithAI(description, dateStr = null) {
+  try {
+    const today = dateStr ? new Date(dateStr) : new Date();
+    const user = await prisma.user.findUnique({ where: { id: await getUserId() } });
     const weight = user?.weight || 70;
     const height = user?.height || 175;
 
-    const prompt = `You are an expert fitness coach. Estimate the calories burned for this activity based on the user's profile.
-User Profile: Weight ${weight}kg, Height ${height}cm.
-Activity Description: "${description}"
-
-Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
-{
-  "name": "Short, clean activity name",
-  "duration": 30,
-  "caloriesBurned": 200
-}`;
+    const prompt = `User activity: "${description}". Date: ${today.toDateString()}. 
+Estimate duration (min) and calories burned for weight ${weight}kg, height ${height}cm.
+JSON: { "name": "...", "duration": 30, "caloriesBurned": 200 }`;
 
     let data = await resilientAI(prompt);
 
@@ -338,13 +458,15 @@ Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
 
     const newLog = await prisma.activityLog.create({
       data: {
-        userId: DUMMY_USER_ID,
+        userId: await getUserId(),
         name: String(data.name || description),
         duration: safeInt(data.duration, 30),
         caloriesBurned: safeInt(data.caloriesBurned, 200),
+        loggedAt: today,
       },
     });
 
+    await regenerateDailyScore(dateStr);
     return { success: true, data: JSON.parse(JSON.stringify(newLog)) };
   } catch (error) {
     console.error("[logActivityWithAI] Error:", error);
@@ -352,12 +474,12 @@ Return ONLY valid JSON matching this exact schema (no explanation, no markdown):
   }
 }
 
-// ─── addHabitAction ───────────────────────────────────────────────────────────
+// --- addHabitAction ----------------------------------------------------------
 export async function addHabitAction(name, frequency = 'daily') {
   try {
     const newHabit = await prisma.habit.create({
       data: {
-        userId: DUMMY_USER_ID,
+        userId: await getUserId(),
         name: String(name).trim(),
         frequency: String(frequency),
       },
@@ -369,10 +491,10 @@ export async function addHabitAction(name, frequency = 'daily') {
   }
 }
 
-// ─── logHabitCompletion ───────────────────────────────────────────────────────
-export async function logHabitCompletion(habitId) {
+// --- logHabitCompletion ------------------------------------------------------
+export async function logHabitCompletion(habitId, dateStr = null) {
   try {
-    const today = new Date();
+    const today = dateStr ? new Date(dateStr) : new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -420,15 +542,12 @@ export async function logHabitCompletion(habitId) {
         }
       }
 
-      if (refreshNeeded) {
-        await regenerateDailyScore();
-      }
-
-      return { success: true, removed: true, refreshNeeded };
+      await regenerateDailyScore(dateStr);
+      return { success: true, removed: true, refreshNeeded: true };
     }
 
     const log = await prisma.habitLog.create({
-      data: { habitId, completedDate: new Date() },
+      data: { habitId, completedDate: today },
     });
 
     const habit = await prisma.habit.update({
@@ -437,25 +556,23 @@ export async function logHabitCompletion(habitId) {
     });
 
     let refreshNeeded = false;
-    if (habit.name.startsWith('Health — ')) {
-      const taskName = habit.name.replace('Health — ', '').trim();
-      await logFoodWithAI(`I just completed my health habit: ${taskName}. Log this as food/drink appropriately.`);
+    if (habit.name.startsWith('Health - ')) {
+      const taskName = habit.name.replace('Health - ', '').trim();
+      const previewRes = await logFoodWithAI(`I just completed my health habit: ${taskName}. Log this as food/drink appropriately.`, dateStr);
+      if (previewRes.success) await confirmFoodLog(previewRes.preview, dateStr);
       refreshNeeded = true;
-    } else if (habit.name.startsWith('Fitness — ')) {
-      const taskName = habit.name.replace('Fitness — ', '').trim();
-      await logActivityWithAI(`I just completed my fitness habit: ${taskName}. Log this activity appropriately.`);
+    } else if (habit.name.startsWith('Fitness - ')) {
+      const taskName = habit.name.replace('Fitness - ', '').trim();
+      await logActivityWithAI(`I just completed my fitness habit: ${taskName}. Log this activity appropriately.`, dateStr);
       refreshNeeded = true;
     }
 
-    if (refreshNeeded) {
-      await regenerateDailyScore();
-    }
-
+    await regenerateDailyScore(dateStr);
     return { 
       success: true, 
       removed: false, 
       data: JSON.parse(JSON.stringify(log)),
-      refreshNeeded 
+      refreshNeeded: true 
     };
   } catch (error) {
     console.error("[logHabitCompletion] Error:", error);
@@ -463,13 +580,13 @@ export async function logHabitCompletion(habitId) {
   }
 }
 
-// ─── deleteHabit ──────────────────────────────────────────────────────────────
-export async function deleteHabit(habitId) {
+// --- deleteHabit -------------------------------------------------------------
+export async function deleteHabit(habitId, dateStr = null) {
   try {
     const habit = await prisma.habit.findUnique({ where: { id: habitId } });
     if (!habit) return { success: false, error: "Habit not found" };
 
-    const today = new Date();
+    const today = dateStr ? new Date(dateStr) : new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -507,7 +624,7 @@ export async function deleteHabit(habitId) {
 
     await prisma.habit.delete({ where: { id: habitId } });
     if (refreshNeeded) {
-      await regenerateDailyScore();
+      await regenerateDailyScore(dateStr);
     }
     return { success: true, refreshNeeded };
   } catch (error) {
@@ -516,7 +633,7 @@ export async function deleteHabit(habitId) {
   }
 }
 
-// ─── getAnalyticsData ─────────────────────────────────────────────────────────
+// --- getAnalyticsData --------------------------------------------------------
 export async function getAnalyticsData() {
   try {
     const today = new Date();
@@ -528,24 +645,26 @@ export async function getAnalyticsData() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const userId = await getUserId();
+
     const [foodLogs, activityLogs, habitLogs, habits] = await Promise.all([
       prisma.foodLog.findMany({
-        where: { userId: DUMMY_USER_ID, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
+        where: { userId, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
         select: { calories: true, naturalSugar: true, addedSugar: true, loggedAt: true },
       }),
       prisma.activityLog.findMany({
-        where: { userId: DUMMY_USER_ID, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
+        where: { userId, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
         select: { caloriesBurned: true, loggedAt: true },
       }),
       prisma.habitLog.findMany({
         where: {
-          habit: { userId: DUMMY_USER_ID },
+          habit: { userId },
           completedDate: { gte: sevenDaysAgo, lt: tomorrow },
         },
         select: { completedDate: true, habitId: true },
       }),
       prisma.habit.findMany({
-        where: { userId: DUMMY_USER_ID },
+        where: { userId },
         select: { id: true },
       }),
     ]);
@@ -555,7 +674,7 @@ export async function getAnalyticsData() {
     const dailyBurned = Array(7).fill(0);
     const dailyNaturalSugar = Array(7).fill(0);
     const dailyAddedSugar = Array(7).fill(0);
-    const habitDayMap = {}; // dayIndex → Set<habitId>
+    const habitDayMap = {}; // dayIndex -> Set<habitId>
     const habitIds = habits.map(h => h.id);
 
     const getDayIndex = (dateVal) => {
@@ -613,32 +732,62 @@ export async function getAnalyticsData() {
   }
 }
 
-// ─── regenerateDailyScore ─────────────────────────────────────────────────────
-export async function regenerateDailyScore() {
+// --- regenerateDailyScore: Silently re-run the score logic for a date --------
+export async function regenerateDailyScore(dateStr = null) {
   try {
-    const today = new Date();
+    const userId = await getUserId();
+    const today = dateStr ? new Date(dateStr) : new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const userHabits = await prisma.habit.findMany({ where: { userId: DUMMY_USER_ID } });
-    const existingFoodLogs = await prisma.foodLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      select: { calories: true, description: true }
-    });
-    const existingActivityLogs = await prisma.activityLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      select: { caloriesBurned: true, name: true }
-    });
-    const completedHabitLogsToday = await prisma.habitLog.findMany({
-      where: { habit: { userId: DUMMY_USER_ID }, completedDate: { gte: today, lt: tomorrow } },
-      select: { habitId: true }
+    // 1. Optimization: Only update AI score once per hour to save API calls
+    const existingScore = await prisma.dailyScore.findUnique({
+      where: { userId_date: { userId, date: today } }
     });
 
+    if (existingScore && existingScore.updatedAt) {
+      const lastUpdate = new Date(existingScore.updatedAt);
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      if (lastUpdate > oneHourAgo) {
+        console.log(`[regenerateDailyScore] Throttled. Last update was ${lastUpdate.toLocaleTimeString()}.`);
+        return { success: true, data: JSON.parse(JSON.stringify(existingScore)), throttled: true };
+      }
+    }
+
+    const [user, userHabits, existingFoodLogs, existingActivityLogs, completedHabitLogsToday] = await Promise.all([
+      prisma.user.findUnique({ 
+        where: { id: userId }, 
+        select: { targetCalories: true, weight: true, height: true, age: true, gender: true } 
+      }),
+      prisma.habit.findMany({ where: { userId } }),
+      prisma.foodLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        select: { calories: true, description: true }
+      }),
+      prisma.activityLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        select: { caloriesBurned: true, name: true }
+      }),
+      prisma.habitLog.findMany({
+        where: { habit: { userId }, completedDate: { gte: today, lt: tomorrow } },
+        select: { habitId: true }
+      }),
+    ]);
+
+    const age = user?.age || 25;
+    const gender = user?.gender || 'male';
+    const weight = user?.weight || 70;
+    const height = user?.height || 170;
+    let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+    if (gender === 'male') bmr += 5; else bmr -= 161;
+
     const caloriesConsumedSoFar = existingFoodLogs.reduce((s, f) => s + (f.calories || 0), 0);
-    const caloriesBurnedSoFar   = existingActivityLogs.reduce((s, a) => s + (a.caloriesBurned || 0), 0);
-    const DAILY_CAL_GOAL = 2000;
-    const calRemaining = Math.max(0, DAILY_CAL_GOAL - caloriesConsumedSoFar + caloriesBurnedSoFar);
+    const activeBurned = existingActivityLogs.reduce((s, a) => s + (a.caloriesBurned || 0), 0);
+    const totalBurnedSoFar = Math.round(bmr + activeBurned);
+
+    const DAILY_CAL_GOAL = user?.targetCalories || 2000;
+    const calRemaining = Math.max(0, DAILY_CAL_GOAL - caloriesConsumedSoFar + activeBurned);
 
     const completedHabitIdsToday = new Set(completedHabitLogsToday.map(l => l.habitId));
     const pendingHabits = userHabits.filter(h => !completedHabitIdsToday.has(h.id));
@@ -661,15 +810,18 @@ Pay close attention to the specific types of foods consumed (e.g. junk food vs h
 Current Context:
 - Foods logged today: ${foodsListStr}
 - Activities logged today: ${activitiesListStr}
-- Calories consumed: ${caloriesConsumedSoFar} kcal
-- Calories burned: ${caloriesBurnedSoFar} kcal
-- Remaining calorie allowance: ${calRemaining} kcal
+- Consumed: ${caloriesConsumedSoFar} kcal
+- Baseline (BMR): ${bmr} kcal
+- Active Burned: ${activeBurned} kcal
+- Total Burned: ${totalBurnedSoFar} kcal
+- Remaining: ${calRemaining} kcal
 - Pending habits not yet completed: ${pendingHabitsStr}
 
-Return ONLY valid JSON (no markdown). Act as an elite coach. Provide an updated score (0-100) and insight (3-4 sentences):
+Return ONLY valid JSON (no markdown). Act as an elite coach. Provide an updated score (0-100), insight (3-4 sentences), and a percentage breakdown summing to 100% (body, mind, energy):
 {
   "score": 75,
-  "insight": "Detailed coaching review and action plan based on the current stats..."
+  "insight": "Detailed coaching review...",
+  "breakdown": { "body": 33, "mind": 33, "energy": 34 }
 }`;
 
     let data = await resilientAI(prompt);
@@ -680,17 +832,27 @@ Return ONLY valid JSON (no markdown). Act as an elite coach. Provide an updated 
       data = {
         score: estScore,
         insight: `I've updated your daily summary. You have ${calRemaining} kcal remaining. ${pendingStr} Keep it up!`,
+        breakdown: { body: 33, mind: 33, energy: 34 }
       };
     }
 
     const scoreRecord = await prisma.dailyScore.upsert({
-      where: { userId_date: { userId: DUMMY_USER_ID, date: today } },
-      update: { score: safeInt(data.score, 50), insight: String(data.insight || '') },
+      where: { userId_date: { userId, date: today } },
+      update: {
+        score: safeInt(data.score, 50),
+        insight: String(data.insight || ''),
+        bodyPct: safeInt(data.breakdown?.body, 33),
+        mindPct: safeInt(data.breakdown?.mind, 33),
+        energyPct: safeInt(data.breakdown?.energy, 34)
+      },
       create: {
-        userId: DUMMY_USER_ID,
+        userId,
         date: today,
         score: safeInt(data.score, 50),
         insight: String(data.insight || ''),
+        bodyPct: safeInt(data.breakdown?.body, 33),
+        mindPct: safeInt(data.breakdown?.mind, 33),
+        energyPct: safeInt(data.breakdown?.energy, 34)
       },
     });
 
@@ -701,7 +863,7 @@ Return ONLY valid JSON (no markdown). Act as an elite coach. Provide an updated 
   }
 }
 
-// ─── generateDailyScore ───────────────────────────────────────────────────────
+// --- generateDailyScore ------------------------------------------------------
 export async function generateDailyScore(description) {
   try {
     // Fetch habits and today's existing logs to compute quota context for the AI
@@ -710,24 +872,39 @@ export async function generateDailyScore(description) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const userHabits = await prisma.habit.findMany({ where: { userId: DUMMY_USER_ID } });
-    const existingFoodLogs = await prisma.foodLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      select: { calories: true, description: true }
-    });
-    const existingActivityLogs = await prisma.activityLog.findMany({
-      where: { userId: DUMMY_USER_ID, loggedAt: { gte: today, lt: tomorrow } },
-      select: { caloriesBurned: true, name: true }
-    });
-    const completedHabitLogsToday = await prisma.habitLog.findMany({
-      where: { habit: { userId: DUMMY_USER_ID }, completedDate: { gte: today, lt: tomorrow } },
-      select: { habitId: true }
-    });
+    const userId = await getUserId();
+
+    const [user, userHabits, existingFoodLogs, existingActivityLogs, completedHabitLogsToday] = await Promise.all([
+      prisma.user.findUnique({ 
+        where: { id: userId }, 
+        select: { targetCalories: true, weight: true, height: true, age: true, gender: true } 
+      }),
+      prisma.habit.findMany({ where: { userId } }),
+      prisma.foodLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        select: { calories: true, description: true }
+      }),
+      prisma.activityLog.findMany({
+        where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+        select: { caloriesBurned: true, name: true }
+      }),
+      prisma.habitLog.findMany({
+        where: { habit: { userId }, completedDate: { gte: today, lt: tomorrow } },
+        select: { habitId: true }
+      }),
+    ]);
+
+    const age = user?.age || 25;
+    const gender = user?.gender || 'male';
+    const weight = user?.weight || 70;
+    const height = user?.height || 170;
+    let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+    if (gender === 'male') bmr += 5; else bmr -= 161;
 
     const caloriesConsumedSoFar = existingFoodLogs.reduce((s, f) => s + (f.calories || 0), 0);
-    const caloriesBurnedSoFar   = existingActivityLogs.reduce((s, a) => s + (a.caloriesBurned || 0), 0);
-    const DAILY_CAL_GOAL = 2000;
-    const calRemaining = Math.max(0, DAILY_CAL_GOAL - caloriesConsumedSoFar + caloriesBurnedSoFar);
+    const activeBurned = existingActivityLogs.reduce((s, a) => s + (a.caloriesBurned || 0), 0);
+    const DAILY_CAL_GOAL = user?.targetCalories || 2000;
+    const calRemaining = Math.max(0, DAILY_CAL_GOAL - caloriesConsumedSoFar + activeBurned);
 
     const completedHabitIdsToday = new Set(completedHabitLogsToday.map(l => l.habitId));
     const pendingHabits = userHabits.filter(h => !completedHabitIdsToday.has(h.id));
@@ -756,16 +933,17 @@ Pay close attention to the specific types of foods consumed (e.g. junk food vs h
 Context so far today:
 - Foods logged today: ${foodsListStr}
 - Activities logged today: ${activitiesListStr}
-- Calories consumed: ${caloriesConsumedSoFar} kcal
-- Calories burned: ${caloriesBurnedSoFar} kcal
+- Consumed: ${caloriesConsumedSoFar} kcal
+- Active Burned: ${activeBurned} kcal
+- Baseline (BMR): ${bmr} kcal
 - Daily calorie goal: ${DAILY_CAL_GOAL} kcal
-- Remaining calorie allowance: ${calRemaining} kcal
+- Remaining allowance: ${calRemaining} kcal
 - Pending habits not yet completed: ${pendingHabitsStr}
 
 User's habit list:
 ${habitListStr}
 
-Return ONLY valid JSON (no markdown). The "insight" must be a detailed, coaching-style review (3-4 sentences). Act as an elite personal health coach. Acknowledge what they did well based on their input, gently correct any missteps, give an actionable step for what to do next, and explicitly state their remaining daily calorie quota and which specific habits they still need to complete.
+Return ONLY valid JSON (no markdown). The "insight" must be a detailed, coaching-style review (3-4 sentences). Act as an elite personal health coach. Provide a percentage breakdown summing to 100% (body, mind, energy).
 
 CRITICAL INSTRUCTION FOR ARRAYS:
 For the "foods" and "activities" arrays, ONLY extract the specific foods or activities that the user mentions in their CURRENT input ("${description}").
@@ -773,7 +951,8 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
 
 {
   "score": 75,
-  "insight": "Detailed coaching review and action plan...",
+  "insight": "Detailed coaching review...",
+  "breakdown": { "body": 33, "mind": 33, "energy": 34 },
   "foods": [
     { "description": "meal name", "calories": 0, "protein": 0, "carbs": 0, "fat": 0, "naturalSugar": 0, "addedSugar": 0 }
   ],
@@ -798,11 +977,24 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
       data = {
         score: estScore,
         insight: `I've analyzed your log. You have ${calRemaining} kcal remaining in your daily allowance. ${pendingStr} Stay focused and keep making healthy choices to finish the day strong!`,
-        foods: low.includes('ate') || low.includes('drank') || low.includes('food') ? [
-          { description: "Estimated Meal", calories: 450, protein: 18, carbs: 50, fat: 15, naturalSugar: 8, addedSugar: 4 }
+        breakdown: { body: 33, mind: 33, energy: 34 },
+        foods: (low.includes('ate') || low.includes('had') || low.includes('food')) ? [
+          { 
+            description: description.length > 50 ? description.substring(0, 47) + "..." : description, 
+            calories: 450, 
+            protein: 18, 
+            carbs: 50, 
+            fat: 15, 
+            naturalSugar: 8, 
+            addedSugar: 4 
+          }
         ] : [],
-        activities: pCount > 0 ? [
-          { name: "Physical Activity (Estimated)", duration: 30, caloriesBurned: 180 }
+        activities: (pCount > 0 || low.includes('did') || low.includes('exercise')) ? [
+          { 
+            name: description.length > 50 ? description.substring(0, 47) + "..." : description, 
+            duration: 30, 
+            caloriesBurned: 180 
+          }
         ] : [],
         completedHabitIds: [],
       };
@@ -810,13 +1002,22 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
 
     // Upsert score
     const scoreRecord = await prisma.dailyScore.upsert({
-      where: { userId_date: { userId: DUMMY_USER_ID, date: today } },
-      update: { score: safeInt(data.score, 50), insight: String(data.insight || '') },
+      where: { userId_date: { userId, date: today } },
+      update: {
+        score: safeInt(data.score, 50),
+        insight: String(data.insight || ''),
+        bodyPct: safeInt(data.breakdown?.body, 33),
+        mindPct: safeInt(data.breakdown?.mind, 33),
+        energyPct: safeInt(data.breakdown?.energy, 34)
+      },
       create: {
-        userId: DUMMY_USER_ID,
+        userId,
         date: today,
         score: safeInt(data.score, 50),
         insight: String(data.insight || ''),
+        bodyPct: safeInt(data.breakdown?.body, 33),
+        mindPct: safeInt(data.breakdown?.mind, 33),
+        energyPct: safeInt(data.breakdown?.energy, 34)
       },
     });
 
@@ -824,7 +1025,7 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
     if (Array.isArray(data.foods) && data.foods.length > 0) {
       await prisma.foodLog.createMany({
         data: data.foods.map(f => ({
-          userId: DUMMY_USER_ID,
+          userId,
           description: String(f.description || 'Meal'),
           calories: safeInt(f.calories, 300),
           protein: safeFloat(f.protein, 10),
@@ -840,7 +1041,7 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
     if (Array.isArray(data.activities) && data.activities.length > 0) {
       await prisma.activityLog.createMany({
         data: data.activities.map(a => ({
-          userId: DUMMY_USER_ID,
+          userId,
           name: String(a.name || 'Activity'),
           duration: safeInt(a.duration, 30),
           caloriesBurned: safeInt(a.caloriesBurned, 150),
@@ -848,19 +1049,29 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
       });
     }
 
-    // Mark habits as completed
-    if (Array.isArray(data.completedHabitIds)) {
-      for (const hid of data.completedHabitIds) {
-        if (!hid) continue;
-        const alreadyLogged = await prisma.habitLog.findFirst({
-          where: { habitId: hid, completedDate: { gte: today, lt: tomorrow } },
+    // Mark habits as completed — batched to avoid N+1
+    if (Array.isArray(data.completedHabitIds) && data.completedHabitIds.length > 0) {
+      const validIds = data.completedHabitIds.filter(Boolean);
+      if (validIds.length > 0) {
+        // Fetch all already-logged habits in one query
+        const alreadyLogged = await prisma.habitLog.findMany({
+          where: { habitId: { in: validIds }, completedDate: { gte: today, lt: tomorrow } },
+          select: { habitId: true },
         });
-        if (!alreadyLogged) {
-          await prisma.habitLog.create({ data: { habitId: hid, completedDate: new Date() } });
-          await prisma.habit.update({
-            where: { id: hid },
-            data: { currentStreak: { increment: 1 } },
+        const alreadyLoggedSet = new Set(alreadyLogged.map(l => l.habitId));
+        const newHabitIds = validIds.filter(id => !alreadyLoggedSet.has(id));
+
+        if (newHabitIds.length > 0) {
+          // Batch create all new habit logs
+          await prisma.habitLog.createMany({
+            data: newHabitIds.map(habitId => ({ habitId, completedDate: new Date() })),
           });
+          // Batch update streaks in parallel
+          await Promise.all(
+            newHabitIds.map(id =>
+              prisma.habit.update({ where: { id }, data: { currentStreak: { increment: 1 } } })
+            )
+          );
         }
       }
     }
@@ -885,11 +1096,11 @@ Do NOT copy or re-list items from the "Context so far today" UNLESS the user exp
   }
 }
 
-// ─── deleteFoodLog ────────────────────────────────────────────────────────────
-export async function deleteFoodLog(logId) {
+// --- deleteFoodLog -----------------------------------------------------------
+export async function deleteFoodLog(logId, dateStr = null) {
   try {
     await prisma.foodLog.delete({ where: { id: logId } });
-    await regenerateDailyScore();
+    await regenerateDailyScore(dateStr);
     return { success: true };
   } catch (error) {
     console.error("[deleteFoodLog] Error:", error);
@@ -897,11 +1108,11 @@ export async function deleteFoodLog(logId) {
   }
 }
 
-// ─── deleteActivityLog ────────────────────────────────────────────────────────
-export async function deleteActivityLog(logId) {
+// --- deleteActivityLog -------------------------------------------------------
+export async function deleteActivityLog(logId, dateStr = null) {
   try {
     await prisma.activityLog.delete({ where: { id: logId } });
-    await regenerateDailyScore();
+    await regenerateDailyScore(dateStr);
     return { success: true };
   } catch (error) {
     console.error("[deleteActivityLog] Error:", error);
@@ -909,11 +1120,11 @@ export async function deleteActivityLog(logId) {
   }
 }
 
-// ─── updateUserProfile ────────────────────────────────────────────────────────
+// --- updateUserProfile -------------------------------------------------------
 export async function updateUserProfile(data) {
   try {
     const updated = await prisma.user.update({
-      where: { id: DUMMY_USER_ID },
+      where: { id: await getUserId() },
       data: {
         name: data.name,
         goal: data.goal,
@@ -934,22 +1145,24 @@ export async function getDataForDate(dateStr) {
     const date = new Date(dateStr);
     date.setHours(0, 0, 0, 0);
     const next = new Date(date);
-    next.setDate(next.getDate() + 1);
+    next.setDate(date.getDate() + 1);
+
+    const userId = await getUserId();
 
     const [foodLogs, activityLogs, dailyScore, habits] = await Promise.all([
       prisma.foodLog.findMany({
-        where: { userId: DUMMY_USER_ID, loggedAt: { gte: date, lt: next } },
+        where: { userId, loggedAt: { gte: date, lt: next } },
         orderBy: { loggedAt: 'desc' },
       }),
       prisma.activityLog.findMany({
-        where: { userId: DUMMY_USER_ID, loggedAt: { gte: date, lt: next } },
+        where: { userId, loggedAt: { gte: date, lt: next } },
         orderBy: { loggedAt: 'desc' },
       }),
       prisma.dailyScore.findFirst({
-        where: { userId: DUMMY_USER_ID, date: { gte: date, lt: next } },
+        where: { userId, date: { gte: date, lt: next } },
       }),
       prisma.habit.findMany({
-        where: { userId: DUMMY_USER_ID },
+        where: { userId },
         orderBy: { createdAt: 'asc' },
         include: { logs: { where: { completedDate: { gte: date, lt: next } } } },
       }),
@@ -960,4 +1173,177 @@ export async function getDataForDate(dateStr) {
     console.error('[getDataForDate] Error:', error);
     return { success: false, error: error.message };
   }
+}
+
+// --- Journal Actions ---------------------------------------------------------
+export async function saveJournalEntry({ content, mood, date }) {
+  try {
+    const userId = await getUserId();
+    if (!content || typeof content !== 'string') return { success: false, error: 'Content is required' };
+    const safeContent = content.slice(0, 10000);
+    const safeMood = typeof mood === 'string' ? mood.slice(0, 50) : '';
+    const entryDate = new Date(date);
+    entryDate.setHours(0, 0, 0, 0);
+    const entry = await prisma.journalEntry.create({
+      data: { userId, content: safeContent, mood: safeMood, entryDate }
+    });
+    return { success: true, data: JSON.parse(JSON.stringify(entry)) };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+export async function getJournalEntries() {
+  try {
+    const userId = await getUserId();
+    const entries = await prisma.journalEntry.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+    return { success: true, data: JSON.parse(JSON.stringify(entries)) };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+export async function deleteJournalEntry(id) {
+  try {
+    await prisma.journalEntry.delete({ where: { id, userId: await getUserId() } });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+// --- Profile & Weight Actions ------------------------------------------------
+export async function updateProfile(updates) {
+  try {
+    const userId = await getUserId();
+    const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+    
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: updates.name,
+        goal: updates.goal,
+        height: updates.height ? parseFloat(updates.height) : currentUser.height,
+        weight: updates.weight ? parseFloat(updates.weight) : currentUser.weight,
+        age: updates.age ? parseInt(updates.age) : currentUser.age,
+        gender: updates.gender || currentUser.gender,
+        dietType: updates.dietType,
+        foodPrefs: updates.foodPrefs ? JSON.stringify(updates.foodPrefs) : currentUser.foodPrefs,
+        targetCalories: updates.targetCalories ? parseInt(updates.targetCalories) : currentUser.targetCalories,
+        targetProtein: updates.targetProtein ? parseInt(updates.targetProtein) : currentUser.targetProtein,
+        targetCarbs: updates.targetCarbs ? parseInt(updates.targetCarbs) : currentUser.targetCarbs,
+        targetFat: updates.targetFat ? parseInt(updates.targetFat) : currentUser.targetFat,
+      }
+    });
+
+    if (updates.weight && (!currentUser.weight || Math.abs(currentUser.weight - parseFloat(updates.weight)) > 0.1)) {
+      await prisma.weightLog.create({
+        data: { userId, weight: parseFloat(updates.weight), loggedAt: new Date() }
+      });
+    }
+
+    return { success: true, data: JSON.parse(JSON.stringify(updatedUser)) };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+export async function getWeightLogs() {
+  try {
+    const userId = await getUserId();
+    const logs = await prisma.weightLog.findMany({
+      where: { userId },
+      orderBy: { loggedAt: 'asc' },
+    });
+    
+    if (logs.length === 0) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (user && user.weight) {
+        return { success: true, data: [{ weight: user.weight, loggedAt: user.createdAt }] };
+      }
+      return { success: true, data: [] };
+    }
+    
+    return { success: true, data: JSON.parse(JSON.stringify(logs)) };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+// --- Weekly Insight & Preferences -------------------------------------------
+export async function generateWeeklyInsight() {
+  try {
+    const userId = await getUserId();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [foodLogs, activityLogs, scores, habits, habitLogs] = await Promise.all([
+      prisma.foodLog.findMany({
+        where: { userId, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
+        select: { calories: true, loggedAt: true },
+      }),
+      prisma.activityLog.findMany({
+        where: { userId, loggedAt: { gte: sevenDaysAgo, lt: tomorrow } },
+        select: { caloriesBurned: true, name: true },
+      }),
+      prisma.dailyScore.findMany({
+        where: { userId, date: { gte: sevenDaysAgo, lt: tomorrow } },
+        select: { score: true },
+      }),
+      prisma.habit.findMany({ where: { userId }, select: { id: true } }),
+      prisma.habitLog.findMany({
+        where: { habit: { userId }, completedDate: { gte: sevenDaysAgo, lt: tomorrow } },
+        select: { habitId: true },
+      }),
+    ]);
+
+    const totalCals = foodLogs.reduce((s, f) => s + (f.calories || 0), 0);
+    const totalBurned = activityLogs.reduce((s, a) => s + (a.caloriesBurned || 0), 0);
+    const avgScore = scores.length > 0 ? Math.round(scores.reduce((s, d) => s + d.score, 0) / scores.length) : 0;
+    const habitPct = habits.length > 0 ? Math.round((habitLogs.length / (habits.length * 7)) * 100) : 0;
+
+    const prompt = `You are an elite personal health coach. Analyze this user's 7-day summary.
+
+Stats: ${totalCals} kcal eaten (avg ${Math.round(totalCals/7)}/day), ${totalBurned} kcal burned, avg score ${avgScore}/100, habit completion ${habitPct}%, top activities: ${[...new Set(activityLogs.map(a=>a.name))].slice(0,5).join(', ')||'None'}.
+
+Return ONLY JSON:
+{ "report": "3-4 sentence analysis with advice", "topWin": "best achievement", "topImprovement": "focus area", "weeklyScore": ${avgScore}, "trend": "improving|stable|declining" }`;
+
+    let data = await resilientAI(prompt);
+    if (!data) {
+      data = {
+        report: `This week: ${totalCals.toLocaleString()} kcal consumed, ${totalBurned.toLocaleString()} kcal burned, ${habitPct}% habits completed. Keep it up!`,
+        topWin: habitPct >= 70 ? 'Habit consistency' : 'Showing up',
+        topImprovement: habitPct < 50 ? 'Habit completion' : 'Calorie balance',
+        weeklyScore: avgScore, trend: 'stable',
+      };
+    }
+    return { success: true, data };
+  } catch (error) {
+    console.error("[generateWeeklyInsight] Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// --- Water Tracking ---------------------------------------------------------
+export async function logWater(amountMl) {
+  try {
+    const userId = await getUserId();
+    const amount = Math.max(0, Math.min(5000, safeInt(amountMl, 250)));
+    const log = await prisma.waterLog.create({ data: { userId, amountMl: amount } });
+    return { success: true, data: JSON.parse(JSON.stringify(log)) };
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+export async function getTodayWater() {
+  try {
+    const userId = await getUserId();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const logs = await prisma.waterLog.findMany({
+      where: { userId, loggedAt: { gte: today, lt: tomorrow } },
+      orderBy: { loggedAt: 'desc' },
+    });
+    const totalMl = logs.reduce((s, l) => s + l.amountMl, 0);
+    return { success: true, data: { totalMl, logs: JSON.parse(JSON.stringify(logs)) } };
+  } catch (e) { return { success: false, error: e.message }; }
 }

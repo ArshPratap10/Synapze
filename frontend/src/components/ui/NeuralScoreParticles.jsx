@@ -1,194 +1,93 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
+import dynamic from 'next/dynamic'
 
-const PARTICLE_COUNT = 7000
+const ThreeDScene = dynamic(
+  () => import('@/components/ui/ThreeDScene'),
+  { ssr: false }
+)
 
-export default function NeuralScoreParticles({ score = 0 }) {
-  const mountRef = useRef(null)
-  const scoreRef = useRef(score)
-  const updateRef = useRef(null)
+export default function NeuralScoreParticles({ 
+  score = 0, 
+  bodyPct: propBody, 
+  mindPct: propMind, 
+  energyPct: propEnergy 
+}) {
+  // Use provided props if they exist, otherwise fallback to the dynamic derivation from 'score'
+  const baseScore = score > 0 ? score : 75
+  const body = propBody ?? Math.round(30 + (baseScore % 10)) 
+  const mind = propMind ?? Math.round(40 - (baseScore % 5))
+  const energy = propEnergy ?? (100 - body - mind)
 
-  useEffect(() => {
-    scoreRef.current = score
-    if (updateRef.current) updateRef.current(String(score))
-  }, [score])
-
-  useEffect(() => {
-    if (!mountRef.current) return
-    let animId, renderer
-    const velocities = []
-    const targetPositions = []
-    let mouse = { x: -9999, y: -9999 }
-
-    const tc = document.createElement('canvas')
-    tc.width = 500; tc.height = 200
-    const tx = tc.getContext('2d')
-
-    function sampleText(text) {
-      tx.clearRect(0, 0, tc.width, tc.height)
-      tx.fillStyle = '#fff'
-      tx.font = `900 160px Inter, system-ui, sans-serif`
-      tx.textAlign = 'center'
-      tx.textBaseline = 'middle'
-      tx.fillText(text, tc.width / 2, tc.height / 2 + 5)
-      const data = tx.getImageData(0, 0, tc.width, tc.height).data
-      const pts = []
-      for (let y = 0; y < tc.height; y += 2) {
-        for (let x = 0; x < tc.width; x += 1) {
-          if (data[(y * tc.width + x) * 4 + 3] > 128) {
-            pts.push({
-              x: (x - tc.width / 2) * 0.045,
-              y: -(y - tc.height / 2) * 0.045,
-              z: (Math.random() - 0.5) * 0.8,
-            })
-          }
-        }
-      }
-      return pts
-    }
-
-    function setTargets(text) {
-      const pts = sampleText(text)
-      if (!pts.length) return
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        const p = pts[i % pts.length]
-        targetPositions[i] = {
-          x: p.x + (Math.random() - 0.5) * 0.1,
-          y: p.y + (Math.random() - 0.5) * 0.1,
-          z: p.z,
-        }
-      }
-    }
-
-    updateRef.current = setTargets
-
-    async function setup() {
-      const THREE = (await import('three')).default ?? (await import('three'))
-      const { Scene, PerspectiveCamera, WebGLRenderer, BufferGeometry,
-              Float32BufferAttribute, PointsMaterial, Points,
-              AdditiveBlending, Vector3 } = THREE
-
-      const W = mountRef.current?.clientWidth || 400
-      const H = 260
-
-      const scene = new Scene()
-      const camera = new PerspectiveCamera(60, W / H, 0.1, 500)
-      camera.position.z = 22
-
-      renderer = new WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'low-power' })
-      renderer.setSize(W, H)
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
-      renderer.setClearColor(0x000000, 0)
-      mountRef.current?.appendChild(renderer.domElement)
-
-      const pos = new Float32Array(PARTICLE_COUNT * 3)
-      const col = new Float32Array(PARTICLE_COUNT * 3)
-
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        pos[i*3]   = (Math.random() - 0.5) * 20
-        pos[i*3+1] = (Math.random() - 0.5) * 20
-        pos[i*3+2] = (Math.random() - 0.5) * 5
-        velocities.push({ x: 0, y: 0, z: 0 })
-        targetPositions.push({ x: 0, y: 0, z: 0 })
-        const t = i / PARTICLE_COUNT
-        col[i*3]   = 0.0 + t * 0.7
-        col[i*3+1] = 0.85 - t * 0.6
-        col[i*3+2] = 1.0
-      }
-
-      const geo = new BufferGeometry()
-      geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
-      geo.setAttribute('color', new Float32BufferAttribute(col, 3))
-
-      const mat = new PointsMaterial({
-        size: 0.22,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.95,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      })
-
-      const particles = new Points(geo, mat)
-      scene.add(particles)
-
-      setTargets(String(scoreRef.current || 0))
-
-      const onMouse = (e) => {
-        const r = mountRef.current?.getBoundingClientRect()
-        if (!r) return
-        mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1
-        mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1
-      }
-      const onResize = () => {
-        if (!mountRef.current) return
-        const nW = mountRef.current.clientWidth
-        camera.aspect = nW / 260
-        camera.updateProjectionMatrix()
-        renderer.setSize(nW, 260)
-      }
-      window.addEventListener('mousemove', onMouse)
-      window.addEventListener('resize', onResize)
-
-      const mv = new Vector3()
-      const posAttr = particles.geometry.attributes.position
-
-      function animate() {
-        animId = requestAnimationFrame(animate)
-        const v = new Vector3(mouse.x, mouse.y, 0.5)
-        v.unproject(camera)
-        const dir = v.sub(camera.position).normalize()
-        const dist = -camera.position.z / dir.z
-        mv.copy(camera.position).addScaledVector(dir, dist)
-
-        for (let i = 0; i < PARTICLE_COUNT; i++) {
-          const px = posAttr.getX(i), py = posAttr.getY(i), pz = posAttr.getZ(i)
-          const tgt = targetPositions[i]
-          const dx = px - mv.x, dy = py - mv.y, dz = pz - mv.z
-          const dsq = dx*dx + dy*dy + dz*dz
-          if (dsq < 16) {
-            const d = Math.sqrt(dsq) || 0.001
-            const f = (4 - d) / 4
-            velocities[i].x += (dx/d) * f * 1.0
-            velocities[i].y += (dy/d) * f * 1.0
-          }
-          velocities[i].x += (tgt.x - px) * 0.1
-          velocities[i].y += (tgt.y - py) * 0.1
-          velocities[i].z += (tgt.z - pz) * 0.1
-          velocities[i].x *= 0.78
-          velocities[i].y *= 0.78
-          velocities[i].z *= 0.78
-          posAttr.setXYZ(i, px + velocities[i].x, py + velocities[i].y, pz + velocities[i].z)
-        }
-        posAttr.needsUpdate = true
-        renderer.render(scene, camera)
-      }
-      animate()
-
-      return () => {
-        window.removeEventListener('mousemove', onMouse)
-        window.removeEventListener('resize', onResize)
-      }
-    }
-
-    let cleanup = () => {}
-    setup().then(fn => { if (fn) cleanup = fn })
-
-    return () => {
-      cancelAnimationFrame(animId)
-      cleanup()
-      renderer?.dispose()
-      renderer?.domElement?.parentNode?.removeChild(renderer?.domElement)
-      updateRef.current = null
-    }
-  }, [])
+  const circ = 2 * Math.PI * 156 // ~980.17
+  const bodyLen = (body / 100) * circ
+  const mindLen = (mind / 100) * circ
+  const energyLen = (energy / 100) * circ
 
   return (
-    <div
-      ref={mountRef}
-      className="w-full overflow-hidden rounded-lg"
-      style={{ height: 260, background: 'transparent' }}
-      aria-label={`Neural Score: ${score}`}
-    />
+    <div className="relative w-full h-[340px] flex items-center justify-center select-none overflow-hidden">
+      
+      {/* 3D Neural Orb Background */}
+      <div className="absolute inset-0 w-full h-full max-w-[400px] max-h-[400px] m-auto mix-blend-screen opacity-90">
+        <ThreeDScene />
+      </div>
+
+      {/* Central Score Display */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 1, delay: 0.5 }}
+          className="flex flex-col items-center"
+        >
+          <span className="text-[10px] font-black tracking-[0.4em] text-[#a78bfa]/40 mb-1">SCORE</span>
+          <div className="relative">
+            <span className="text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_30px_rgba(167,139,250,0.4)]">
+              {score || 75}
+            </span>
+            <div className="absolute -inset-4 rounded-full blur-2xl bg-[#a78bfa]/10 -z-10" />
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Floating Pills Overlay */}
+      <div className="absolute inset-0 w-full h-full max-w-[400px] m-auto pointer-events-none">
+        
+        {/* Body Pill (Top Right) */}
+        <motion.div 
+          className="absolute top-[15%] right-[10%] px-3.5 py-1.5 rounded-full flex items-center gap-1.5 z-20"
+          style={{ background: 'rgba(15, 12, 30, 0.6)', border: '1px solid rgba(45, 212, 191, 0.4)', backdropFilter: 'blur(16px)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+          initial={{ opacity: 0, scale: 0.8, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ delay: 1, type: 'spring' }}
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-[#2dd4bf] shadow-[0_0_8px_#2dd4bf]" />
+          <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Body</span>
+          <span className="text-xs font-black text-white">{body}%</span>
+        </motion.div>
+
+        {/* Mind Pill (Middle Left) */}
+        <motion.div 
+          className="absolute top-[45%] left-[5%] px-3.5 py-1.5 rounded-full flex items-center gap-1.5 z-20"
+          style={{ background: 'rgba(15, 12, 30, 0.6)', border: '1px solid rgba(244, 114, 182, 0.4)', backdropFilter: 'blur(16px)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+          initial={{ opacity: 0, scale: 0.8, x: -10 }} animate={{ opacity: 1, scale: 1, x: 0 }} transition={{ delay: 1.15, type: 'spring' }}
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-[#f472b6] shadow-[0_0_8px_#f472b6]" />
+          <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Mind</span>
+          <span className="text-xs font-black text-white">{mind}%</span>
+        </motion.div>
+
+        {/* Energy Pill (Bottom Right) */}
+        <motion.div 
+          className="absolute bottom-[20%] right-[8%] px-3.5 py-1.5 rounded-full flex items-center gap-1.5 z-20"
+          style={{ background: 'rgba(15, 12, 30, 0.6)', border: '1px solid rgba(168, 85, 247, 0.4)', backdropFilter: 'blur(16px)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+          initial={{ opacity: 0, scale: 0.8, y: -10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ delay: 1.3, type: 'spring' }}
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-[#a855f7] shadow-[0_0_8px_#a855f7]" />
+          <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Energy</span>
+          <span className="text-xs font-black text-white">{energy}%</span>
+        </motion.div>
+
+      </div>
+    </div>
   )
 }
+
