@@ -92,8 +92,9 @@ export default function NeuralOrb() {
     return () => {
       window.removeEventListener('resize', handleResize)
       cancelAnimationFrame(frameId)
-      if (containerRef.current) {
-        containerRef.current.removeChild(renderer.domElement)
+      const currentContainer = containerRef.current
+      if (currentContainer) {
+        currentContainer.removeChild(renderer.domElement)
       }
       renderer.dispose()
       geo.dispose()

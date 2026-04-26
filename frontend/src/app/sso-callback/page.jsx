@@ -23,7 +23,7 @@ export default function SSOCallback() {
       
       <h2 className="text-xl font-bold text-white mb-2">Securing your session</h2>
       <p className="text-[#9b94c4] text-sm max-w-xs leading-relaxed mb-8">
-        We're finalizing your secure connection. You'll be redirected to your neural suite in a moment.
+        We&apos;re finalizing your secure connection. You&apos;ll be redirected to your neural suite in a moment.
       </p>
 
       {/* Manual fallback in case Clerk's component hangs */}

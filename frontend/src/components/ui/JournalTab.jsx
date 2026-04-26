@@ -128,7 +128,7 @@ export function JournalTab() {
 
           {/* Mood Selector */}
           <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
-            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMut }}>How's your mood?</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMut }}>How&apos;s your mood?</span>
             <div className="flex gap-1.5">
               {MOODS.map(m => (
                 <button
