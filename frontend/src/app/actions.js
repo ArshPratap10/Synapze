@@ -84,8 +84,10 @@ async function resilientAI(prompt) {
   try {
     const data = await callGemini(prompt);
     if (data) return data;
+    console.warn("[AI] Gemini returned no data, attempting fallback...");
   } catch (e) {
-    console.warn("[AI] All Gemini keys failed, attempting fallback...");
+    console.warn("[AI] Gemini call crashed, attempting fallback...");
+  }
     
     // Minimal Groq Fallback (Optional, but safe to keep)
     const groqKey = process.env.GROQ_API_KEY;

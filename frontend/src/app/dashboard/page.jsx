@@ -872,7 +872,8 @@ function HealthTab({ viewData, isHistorical }) {
       setChatHistory([])
       showToast('Day analysed and logged!', 'success')
     } else {
-      showToast('Analysis failed: ' + res.error, 'error')
+      showToast('Analysing failed. Please check your internet or API key.', 'error')
+      console.error("Analysis Error:", res.error)
     }
     setIsGenerating(false)
   }
@@ -1154,7 +1155,22 @@ function ProfileTab() {
     setLoading(false)
   }
 
-  if (!user) return <Card><p className="text-[var(--text-muted)] text-sm text-center py-8">Loading profile…</p></Card>
+  if (!user && !isLoading) return (
+    <Card className="flex flex-col items-center justify-center py-12 gap-4">
+      <div className="w-12 h-12 rounded-full bg-red-400/10 flex items-center justify-center mb-2">
+        <User size={24} className="text-red-400" />
+      </div>
+      <p className="text-[var(--text-muted)] text-sm text-center max-w-[250px]">Unable to synchronize your profile data. Please try again.</p>
+      <button 
+        onClick={() => window.location.reload()} 
+        className="px-6 py-2 rounded-xl bg-[#7c6bc4] text-white text-sm font-bold shadow-lg hover:shadow-[#7c6bc4]/20 transition-all active:scale-95"
+      >
+        Retry Sync
+      </button>
+    </Card>
+  )
+
+  if (!user) return <Card><p className="text-[var(--text-muted)] text-sm text-center py-12 animate-pulse">Synchronizing your profile…</p></Card>
 
   return (
     <div className="space-y-4">
