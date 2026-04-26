@@ -72,53 +72,55 @@ export function NeuralScoreSection() {
             <p className="text-white/35 text-lg leading-relaxed mb-8">
               The Neural Score distills your habits, nutrition, activity, and mood into a single, powerful number — updated every night by AI. Think of it as your body's credit score.
             </p>
+            <div className="space-y-4">
               {['Blends nutrition, exercise, habits, and sleep into one metric', 'Gamified progression &mdash; compete with yourself', 'AI coaching insights explain exactly what to improve'].map((t, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-6 h-6 rounded-full bg-cyan-500/10 flex items-center justify-center mt-0.5 shrink-0">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00f3ff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    </div>
-                    <p className="text-white/40 text-sm">{t}</p>
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-cyan-500/10 flex items-center justify-center mt-0.5 shrink-0">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00f3ff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   </div>
-                ))}
-            </motion.div>
-
-            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={FV} className="flex flex-col items-center">
-              <div className="relative w-64 h-64 md:w-72 md:h-72">
-                <svg viewBox="0 0 200 200" className="w-full h-full" style={{ filter: 'drop-shadow(0 0 20px rgba(0,243,255,0.2))' }}>
-                  <circle cx="100" cy="100" r="85" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="6" />
-                  <motion.circle 
-                    cx="100" cy="100" r="85" fill="none" stroke="url(#gaugeGrad)" strokeWidth="6" strokeLinecap="round" strokeDasharray="534" 
-                    initial={{ strokeDashoffset: 534 }}
-                    whileInView={{ strokeDashoffset: 534 - (92/100)*534 }}
-                    transition={{ duration: 2.5, ease: "easeOut" }}
-                    transform="rotate(-90 100 100)"
-                  />
-                  <defs>
-                    <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#00f3ff"/><stop offset="100%" stopColor="#8b5cf6"/>
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-7xl font-black text-white tabular-nums">92</span>
-                  <span className="text-[10px] text-cyan-400/50 font-bold tracking-[0.3em] uppercase mt-2">Neural Score</span>
+                  <p className="text-white/40 text-sm">{t}</p>
                 </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={FV} className="flex flex-col items-center">
+            <div className="relative w-64 h-64 md:w-72 md:h-72">
+              <svg viewBox="0 0 200 200" className="w-full h-full" style={{ filter: 'drop-shadow(0 0 20px rgba(0,243,255,0.2))' }}>
+                <circle cx="100" cy="100" r="85" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="6" />
+                <motion.circle 
+                  cx="100" cy="100" r="85" fill="none" stroke="url(#gaugeGrad)" strokeWidth="6" strokeLinecap="round" strokeDasharray="534" 
+                  initial={{ strokeDashoffset: 534 }}
+                  whileInView={{ strokeDashoffset: 534 - (92/100)*534 }}
+                  transition={{ duration: 2.5, ease: "easeOut" }}
+                  transform="rotate(-90 100 100)"
+                />
+                <defs>
+                  <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#00f3ff"/><stop offset="100%" stopColor="#8b5cf6"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-7xl font-black text-white tabular-nums">92</span>
+                <span className="text-[10px] text-cyan-400/50 font-bold tracking-[0.3em] uppercase mt-2">Neural Score</span>
               </div>
-              <div className="flex justify-center gap-3 mt-8">
-                {[{c: 'bg-cyan-400', l: 'Body', v: '88%'}, {c: 'bg-violet-400', l: 'Mind', v: '82%'}, {c: 'bg-amber-400', l: 'Energy', v: '79%'}].map((p, i) => (
-                  <div key={i} className="liquid-glass px-4 py-2 flex items-center gap-2 text-xs">
-                    <div className={`w-2 h-2 rounded-full ${p.c}`}></div>
-                    <span className="text-white/40">{p.l}</span>
-                    <span className="font-bold text-white">{p.v}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </div>
+            </div>
+            <div className="flex justify-center gap-3 mt-8">
+              {[{c: 'bg-cyan-400', l: 'Body', v: '88%'}, {c: 'bg-violet-400', l: 'Mind', v: '82%'}, {c: 'bg-amber-400', l: 'Energy', v: '79%'}].map((p, i) => (
+                <div key={i} className="liquid-glass px-4 py-2 flex items-center gap-2 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${p.c}`}></div>
+                  <span className="text-white/40">{p.l}</span>
+                  <span className="font-bold text-white">{p.v}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
-      </section>
-    )
-  }
+      </div>
+    </section>
+  )
+}
 
 export function AILoggingSection() {
   return (
