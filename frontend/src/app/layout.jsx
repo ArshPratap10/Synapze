@@ -3,6 +3,7 @@ import './globals.css'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ThemeProvider } from '@/lib/ThemeContext'
 import AppShell from '@/components/AppShell'
+import { Analytics } from '@vercel/analytics/next'
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -58,6 +59,7 @@ export default function RootLayout({ children }) {
             </AppShell>
           </ThemeProvider>
         </ClerkProvider>
+        <Analytics />
       </body>
     </html>
   )
