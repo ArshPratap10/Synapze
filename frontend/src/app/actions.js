@@ -14,6 +14,8 @@ const GEMINI_KEYS = [
   process.env.GEMINI_API_KEY,
   process.env.GEMINI_API_KEY_2,
   process.env.GEMINI_API_KEY_3,
+  process.env.GEMINI_API_KEY_4,
+  process.env.GEMINI_API_KEY_5,
   process.env.DEMOKEY
 ].filter(Boolean);
 
@@ -81,15 +83,43 @@ async function callGemini(prompt, isVision = false, base64Image = null) {
 
 // --- AI Logic: Strictly Gemini 2.5 Flash (High Usage) -------------------------
 async function resilientAI(prompt) {
+  // 1. Primary: Direct Gemini (Key Rotation)
   try {
     const data = await callGemini(prompt);
     if (data) return data;
-    console.warn("[AI] Gemini returned no data, attempting fallback...");
   } catch (e) {
-    console.warn("[AI] Gemini call crashed, attempting fallback...");
+    console.warn("[AI] Gemini failed, moving to fallbacks...");
   }
-    
-  // Minimal Groq Fallback (Optional, but safe to keep)
+
+  // 2. Secondary: OpenRouter Free Models (Unlimited/Free)
+  const orKey = process.env.OPENROUTER_API_KEY;
+  if (orKey) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${orKey}`,
+          "HTTP-Referer": "https://synapze.app", // Optional
+          "X-Title": "Synapze" // Optional
+        },
+        body: JSON.stringify({
+          model: "openrouter/free", // OpenRouter's free auto-router
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "{}";
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
+      }
+    } catch (err) {
+      console.warn('[AI] OpenRouter fallback failed:', err.message);
+    }
+  }
+
+  // 3. Tertiary: Groq Fallback
   const groqKey = process.env.GROQ_API_KEY;
   if (groqKey) {
     try {
@@ -108,7 +138,6 @@ async function resilientAI(prompt) {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
       }
-      console.warn('[AI] Groq returned non-OK status:', res.status);
     } catch (err) {
       console.warn('[AI] Groq fallback failed:', err.message);
     }
@@ -437,14 +466,15 @@ export async function saveOnboardingProfile(form) {
 }
 
 export async function suggestFoodPreferences({ goal, dietType }) {
-  try {
-    const prompt = `Suggest 5-10 favorite foods for Breakfast, Lunch, Snacks, Dinner, and General based on a ${dietType} diet and a goal of ${goal}. Return a JSON object with keys: Breakfast, Lunch, Snacks, Dinner, General mapped to arrays of strings. Return ONLY JSON.`;
-    const data = await resilientAI(prompt);
-    return { success: true, data };
-  } catch (error) {
-    console.error("[suggestFoodPreferences] Error:", error);
-    return { success: false, error: error.message };
-  }
+  // Static suggestions to save AI tokens, only use AI for logging food/fitness
+  const suggestions = {
+    Breakfast: ["Oatmeal with berries", "Greek yogurt", "Scrambled eggs", "Fruit smoothie"],
+    Lunch: ["Grilled chicken salad", "Quinoa bowl", "Turkey wrap", "Lentil soup"],
+    Snacks: ["Almonds", "Apple slices", "Protein bar", "Cottage cheese"],
+    Dinner: ["Salmon with asparagus", "Stir-fry tofu", "Lean steak with sweet potato", "Pasta with vegetables"],
+    General: ["Water", "Green tea", "Whole grain bread", "Mixed greens"]
+  };
+  return { success: true, data: suggestions };
 }
 
 // --- logActivityWithAI -------------------------------------------------------
@@ -1308,23 +1338,19 @@ export async function generateWeeklyInsight() {
     const avgScore = scores.length > 0 ? Math.round(scores.reduce((s, d) => s + d.score, 0) / scores.length) : 0;
     const habitPct = habits.length > 0 ? Math.round((habitLogs.length / (habits.length * 7)) * 100) : 0;
 
-    const prompt = `You are an elite personal health coach. Analyze this user's 7-day summary.
-
-Stats: ${totalCals} kcal eaten (avg ${Math.round(totalCals/7)}/day), ${totalBurned} kcal burned, avg score ${avgScore}/100, habit completion ${habitPct}%, top activities: ${[...new Set(activityLogs.map(a=>a.name))].slice(0,5).join(', ')||'None'}.
-
-Return ONLY JSON:
-{ "report": "3-4 sentence analysis with advice", "topWin": "best achievement", "topImprovement": "focus area", "weeklyScore": ${avgScore}, "trend": "improving|stable|declining" }`;
-
-    let data = await resilientAI(prompt);
-    if (!data) {
-      data = {
-        report: `This week: ${totalCals.toLocaleString()} kcal consumed, ${totalBurned.toLocaleString()} kcal burned, ${habitPct}% habits completed. Keep it up!`,
-        topWin: habitPct >= 70 ? 'Habit consistency' : 'Showing up',
+    // Static logical analysis to save AI tokens (logging food/fitness only)
+    const report = `This week, you've consumed a total of ${totalCals.toLocaleString()} calories and burned ${totalBurned.toLocaleString()} through activities. Your average health score is ${avgScore}/100 with a ${habitPct}% habit completion rate. ${habitPct >= 70 ? 'You are showing great consistency!' : 'Try to focus more on your daily habits next week.'}`;
+    
+    return { 
+      success: true, 
+      data: {
+        report,
+        topWin: habitPct >= 70 ? 'Habit consistency' : 'Daily logging',
         topImprovement: habitPct < 50 ? 'Habit completion' : 'Calorie balance',
-        weeklyScore: avgScore, trend: 'stable',
-      };
-    }
-    return { success: true, data };
+        weeklyScore: avgScore,
+        trend: avgScore > 70 ? 'improving' : 'stable'
+      } 
+    };
   } catch (error) {
     console.error("[generateWeeklyInsight] Error:", error);
     return { success: false, error: error.message };
