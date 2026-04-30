@@ -325,7 +325,10 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical,
   const carbStatus = getMacroStatus(deltaCarbs, targetCarbs);
   const fatStatus = getMacroStatus(deltaFat, targetFat);
 
-  const sortedHabits = [...habits].sort((a, b) => {
+  // Filter tasks to only show on the day they were created (daily reset)
+  const displayHabits = habits.filter(h => new Date(h.createdAt).toDateString() === todayStr)
+
+  const sortedHabits = [...displayHabits].sort((a, b) => {
     const aDone = (a.logs || []).some(l => new Date(l.completedDate).toDateString() === todayStr)
     const bDone = (b.logs || []).some(l => new Date(l.completedDate).toDateString() === todayStr)
     return (aDone === bDone) ? 0 : aDone ? 1 : -1
@@ -333,7 +336,7 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical,
 
   const liveAnalytics = analytics.length === 7 ? [...analytics] : []
   if (liveAnalytics.length === 7) {
-    const completedCount = habits.filter(h => (h.logs || []).some(l => new Date(l.completedDate).toDateString() === todayStr)).length
+    const completedCount = displayHabits.filter(h => (h.logs || []).some(l => new Date(l.completedDate).toDateString() === todayStr)).length
     liveAnalytics[6] = {
       ...liveAnalytics[6],
       calories: totalCalIn,
@@ -341,7 +344,7 @@ function HomeTab({ onAddHabit, onAddFood, onAddActivity, viewData, isHistorical,
       net: net,
       naturalSugar: foodLogs.reduce((s, f) => s + (f.naturalSugar || 0), 0),
       addedSugar: foodLogs.reduce((s, f) => s + (f.addedSugar || 0), 0),
-      habitCompletion: habits.length > 0 ? Math.round((completedCount / habits.length) * 100) : 0
+      habitCompletion: displayHabits.length > 0 ? Math.round((completedCount / displayHabits.length) * 100) : 0
     }
   }
 
@@ -1437,7 +1440,7 @@ export default function DashboardPage() {
           else if (id==='activity') setShowActivityModal(true);
           else if (id==='journal') setTab('journal');
         }} />
-      <HabitCreationModal isOpen={showHabitModal} onClose={() => setShowHabitModal(false)} />
+      <HabitCreationModal isOpen={showHabitModal} onClose={() => setShowHabitModal(false)} selectedDate={selectedDate} />
       <FoodLogModal 
         isOpen={showFoodModal} 
         onClose={() => setShowFoodModal(false)} 

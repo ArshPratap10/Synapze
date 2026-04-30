@@ -60,7 +60,7 @@ export const GlobalActionMenu = ({ isOpen, onClose, onSelect }) => (
 );
 
 // --- Habit Creation Modal ----------------------------------------------------
-export const HabitCreationModal = ({ isOpen, onClose }) => {
+export const HabitCreationModal = ({ isOpen, onClose, selectedDate = null }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,7 +70,7 @@ export const HabitCreationModal = ({ isOpen, onClose }) => {
     if (!name.trim()) return;
     setLoading(true);
     const finalName = category ? `${category} --- ${name.trim()}` : name.trim();
-    const res = await addHabitAction(finalName, 'daily');
+    const res = await addHabitAction(finalName, 'daily', selectedDate);
     if (res.success) { addHabit(res.data); setName(''); setCategory(''); onClose(); }
     else alert('Failed: ' + res.error);
     setLoading(false);

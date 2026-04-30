@@ -514,13 +514,15 @@ JSON: { "name": "...", "duration": 30, "caloriesBurned": 200 }`;
 }
 
 // --- addHabitAction ----------------------------------------------------------
-export async function addHabitAction(name, frequency = 'daily') {
+export async function addHabitAction(name, frequency = 'daily', dateStr = null) {
   try {
+    const targetDate = dateStr ? new Date(dateStr) : new Date();
     const newHabit = await prisma.habit.create({
       data: {
         userId: await getUserId(),
         name: String(name).trim(),
         frequency: String(frequency),
+        createdAt: targetDate,
       },
     });
     return { success: true, data: JSON.parse(JSON.stringify({ ...newHabit, logs: [] })) };

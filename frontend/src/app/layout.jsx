@@ -3,6 +3,7 @@ import './globals.css'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ThemeProvider } from '@/lib/ThemeContext'
 import AppShell from '@/components/AppShell'
+import SmoothScroll from '@/components/SmoothScroll'
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -52,11 +53,13 @@ export default function RootLayout({ children }) {
 
       <body className={`${jakarta.variable} ${inter.variable} font-sans min-h-screen grain-overlay`}>
         <ClerkProvider>
-          <ThemeProvider>
-            <AppShell>
-              {children}
-            </AppShell>
-          </ThemeProvider>
+          <SmoothScroll>
+            <ThemeProvider>
+              <AppShell>
+                {children}
+              </AppShell>
+            </ThemeProvider>
+          </SmoothScroll>
         </ClerkProvider>
       </body>
     </html>
